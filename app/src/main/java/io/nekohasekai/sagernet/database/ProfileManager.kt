@@ -22,31 +22,33 @@
 package io.nekohasekai.sagernet.database
 
 import android.database.sqlite.SQLiteCantOpenDatabaseException
-import android.util.Base64
+import cn.hutool.json.*
 import com.github.shadowsocks.plugin.PluginOptions
 import io.nekohasekai.sagernet.R
 import io.nekohasekai.sagernet.aidl.TrafficStats
 import io.nekohasekai.sagernet.fmt.AbstractBean
+import io.nekohasekai.sagernet.fmt.gson.gson
+import io.nekohasekai.sagernet.fmt.http.HttpBean
 import io.nekohasekai.sagernet.fmt.shadowsocks.ShadowsocksBean
 import io.nekohasekai.sagernet.fmt.shadowsocks.fixInvalidParams
 import io.nekohasekai.sagernet.fmt.shadowsocks.parseShadowsocks
 import io.nekohasekai.sagernet.fmt.shadowsocksr.ShadowsocksRBean
+import io.nekohasekai.sagernet.fmt.shadowsocksr.parseShadowsocksR
 import io.nekohasekai.sagernet.fmt.socks.SOCKSBean
 import io.nekohasekai.sagernet.fmt.trojan.TrojanBean
+import io.nekohasekai.sagernet.fmt.trojan_go.parseTrojanGo
+import io.nekohasekai.sagernet.fmt.v2ray.V2RayConfig.*
+import io.nekohasekai.sagernet.fmt.v2ray.VLESSBean
 import io.nekohasekai.sagernet.fmt.v2ray.VMessBean
-import io.nekohasekai.sagernet.ktx.Logs
-import io.nekohasekai.sagernet.ktx.app
-import io.nekohasekai.sagernet.ktx.parseProxies
+import io.nekohasekai.sagernet.ktx.*
 import io.nekohasekai.sagernet.utils.DirectBoot
-import okhttp3.Response
-import org.json.JSONArray
-import org.json.JSONException
-import org.json.JSONObject
+import org.yaml.snakeyaml.TypeDescription
 import org.yaml.snakeyaml.Yaml
+import org.yaml.snakeyaml.error.YAMLException
 import java.io.IOException
 import java.sql.SQLException
 import java.util.*
-import kotlin.collections.ArrayList
+
 
 object ProfileManager {
 
@@ -55,43 +57,31 @@ object ProfileManager {
         suspend fun onUpdated(profileId: Long, trafficStats: TrafficStats)
         suspend fun onUpdated(profile: ProxyEntity)
         suspend fun onRemoved(groupId: Long, profileId: Long)
-        suspend fun onCleared(groupId: Long)
-        suspend fun reloadProfiles(groupId: Long)
     }
 
-    interface GroupListener {
-        suspend fun onAdd(group: ProxyGroup)
-        suspend fun onUpdated(group: ProxyGroup)
-        suspend fun onRemoved(groupId: Long)
-
-        suspend fun onUpdated(groupId: Long) {}
-        suspend fun refreshSubscription(proxyGroup: ProxyGroup) {}
-        suspend fun refreshSubscription(
-            proxyGroup: ProxyGroup,
-            onRefreshStarted: Runnable,
-            onRefreshFinished: Runnable,
-        ) {
-        }
+    interface RuleListener {
+        suspend fun onAdd(rule: RuleEntity)
+        suspend fun onUpdated(rule: RuleEntity)
+        suspend fun onRemoved(ruleId: Long)
+        suspend fun onCleared()
     }
-
 
     private val listeners = ArrayList<Listener>()
-    private val groupListeners = ArrayList<GroupListener>()
+    private val ruleListeners = ArrayList<RuleListener>()
 
     suspend fun iterator(what: suspend Listener.() -> Unit) {
-        val listeners = synchronized(listeners) {
+        synchronized(listeners) {
             listeners.toList()
-        }
-        for (profileListener in listeners) {
-            what(profileListener)
+        }.forEach { listener ->
+            what(listener)
         }
     }
 
-    suspend fun groupIterator(what: suspend GroupListener.() -> Unit) {
-        val groupListeners = synchronized(groupListeners) {
-            groupListeners.toList()
+    suspend fun ruleIterator(what: suspend RuleListener.() -> Unit) {
+        val ruleListeners = synchronized(ruleListeners) {
+            ruleListeners.toList()
         }
-        for (listener in groupListeners) {
+        for (listener in ruleListeners) {
             what(listener)
         }
     }
@@ -108,21 +98,21 @@ object ProfileManager {
         }
     }
 
-    fun addListener(listener: GroupListener) {
-        synchronized(groupListeners) {
-            groupListeners.add(listener)
+    fun addListener(listener: RuleListener) {
+        synchronized(ruleListeners) {
+            ruleListeners.add(listener)
         }
     }
 
-
-    fun removeListener(listener: GroupListener) {
-        synchronized(groupListeners) {
-            groupListeners.remove(listener)
+    fun removeListener(listener: RuleListener) {
+        synchronized(ruleListeners) {
+            ruleListeners.remove(listener)
         }
     }
-
 
     suspend fun createProfile(groupId: Long, bean: AbstractBean): ProxyEntity {
+        bean.applyDefaultValues()
+
         val profile = ProxyEntity(groupId = groupId).apply {
             id = 0
             putBean(bean)
@@ -133,48 +123,28 @@ object ProfileManager {
         return profile
     }
 
-    suspend fun updateProfile(vararg profile: ProxyEntity) {
-        SagerDatabase.proxyDao.updateProxy(* profile)
-        profile.forEach {
+    suspend fun updateProfile(profile: ProxyEntity) {
+        SagerDatabase.proxyDao.updateProxy(profile)
+        iterator { onUpdated(profile) }
+    }
+
+    suspend fun updateProfile(profiles: List<ProxyEntity>) {
+        SagerDatabase.proxyDao.updateProxy(profiles)
+        profiles.forEach {
             iterator { onUpdated(it) }
         }
     }
 
     suspend fun deleteProfile(groupId: Long, profileId: Long) {
-        check(SagerDatabase.proxyDao.deleteById(profileId) > 0)
+        if (SagerDatabase.proxyDao.deleteById(profileId) == 0) return
         if (DataStore.selectedProxy == profileId) {
             if (DataStore.directBootAware) DirectBoot.clean()
             DataStore.selectedProxy = 0L
         }
         iterator { onRemoved(groupId, profileId) }
-        if (SagerDatabase.proxyDao.countByGroup(groupId) == 0L) {
-            val group = SagerDatabase.groupDao.getById(groupId) ?: return
-            if (group.isDefault) {
-                val created = createProfile(groupId, SOCKSBean.DEFAULT_BEAN.clone().apply {
-                    name = "Local tunnel"
-                })
-                if (DataStore.selectedProxy == 0L) {
-                    DataStore.selectedProxy = created.id
-                }
-            }
-        } else {
-            rearrange(groupId)
+        if (SagerDatabase.proxyDao.countByGroup(groupId) > 1) {
+            GroupManager.rearrange(groupId)
         }
-    }
-
-    suspend fun clear(groupId: Long) {
-        DataStore.selectedProxy = 0L
-        SagerDatabase.proxyDao.deleteAll(groupId)
-        if (DataStore.directBootAware) DirectBoot.clean()
-        iterator { onCleared(groupId) }
-    }
-
-    fun rearrange(groupId: Long) {
-        val entities = SagerDatabase.proxyDao.getByGroup(groupId)
-        for (index in entities.indices) {
-            entities[index].userOrder = (index + 1).toLong()
-        }
-        SagerDatabase.proxyDao.updateProxy(* entities.toTypedArray())
     }
 
     fun getProfile(profileId: Long): ProxyEntity? {
@@ -189,6 +159,18 @@ object ProfileManager {
         }
     }
 
+    fun getProfiles(profileIds: List<Long>): List<ProxyEntity> {
+        if (profileIds.isEmpty()) return listOf()
+        return try {
+            SagerDatabase.proxyDao.getEntities(profileIds)
+        } catch (ex: SQLiteCantOpenDatabaseException) {
+            throw IOException(ex)
+        } catch (ex: SQLException) {
+            Logs.w(ex)
+            listOf()
+        }
+    }
+
     suspend fun postUpdate(profileId: Long) {
         postUpdate(getProfile(profileId) ?: return)
     }
@@ -197,194 +179,75 @@ object ProfileManager {
         iterator { onUpdated(profile) }
     }
 
-    suspend fun postReload(groupId: Long) {
-        iterator { reloadProfiles(groupId) }
-        groupIterator { onUpdated(groupId) }
-    }
-
     suspend fun postTrafficUpdated(profileId: Long, stats: TrafficStats) {
         iterator { onUpdated(profileId, stats) }
     }
 
-    suspend fun createGroup(group: ProxyGroup): ProxyGroup {
-        group.userOrder = SagerDatabase.groupDao.nextOrder() ?: 1
-        group.id = SagerDatabase.groupDao.createGroup(group)
-        groupIterator { onAdd(group) }
-        return group
-    }
-
-    suspend fun updateGroup(group: ProxyGroup) {
-        SagerDatabase.groupDao.updateGroup(group)
-        groupIterator { onUpdated(group) }
-    }
-
-    suspend fun deleteGroup(groupId: Long) {
-        SagerDatabase.groupDao.deleteById(groupId)
-        groupIterator { onRemoved(groupId) }
-    }
-
-    suspend fun deleteGroup(vararg group: ProxyGroup) {
-        SagerDatabase.groupDao.deleteGroup(* group)
-        for (proxyGroup in group) {
-            groupIterator { onRemoved(proxyGroup.id) }
+    suspend fun createRule(rule: RuleEntity, post: Boolean = true): RuleEntity {
+        rule.userOrder = SagerDatabase.rulesDao.nextOrder() ?: 1
+        rule.id = SagerDatabase.rulesDao.createRule(rule)
+        if (post) {
+            ruleIterator { onAdd(rule) }
         }
+        return rule
     }
 
-
-    suspend fun createGroup(response: Response) {
-        /* val proxies =
-         if (proxies.isEmpty()) error(SagerNet.application.getString(R.string.no_proxies_found))
-
-         val newGroup = ProxyGroup(
-             name = "New group",
-             isSubscription = true,
-             subscriptionLinks = mutableListOf(response.request.url.toString()),
-             lastUpdate = SystemClock.elapsedRealtimeNanos(),
-         )
-
-         newGroup.id = SagerDatabase.groupDao.createGroup(newGroup)
-
-         groupIterator { onAdd(newGroup) }
-
-         for (proxy in proxies) {
-             createProfile(newGroup.id, proxy)
-         }
-
-         groupIterator { onAddFinish(proxies.size) }*/
+    suspend fun updateRule(rule: RuleEntity) {
+        SagerDatabase.rulesDao.updateRule(rule)
+        ruleIterator { onUpdated(rule) }
     }
 
+    suspend fun deleteRule(ruleId: Long) {
+        SagerDatabase.rulesDao.deleteById(ruleId)
+        ruleIterator { onRemoved(ruleId) }
+    }
 
-    @Suppress("UNCHECKED_CAST")
-    fun parseSubscription(text: String, tryDecode: Boolean = true): Pair<Int, List<AbstractBean>> {
-        if (tryDecode) {
-            try {
-                return parseSubscription(String(Base64.decode(text, Base64.NO_PADDING)), false)
-            } catch (ignored: Exception) {
+    suspend fun deleteRules(rules: List<RuleEntity>) {
+        SagerDatabase.rulesDao.deleteRules(rules)
+        ruleIterator {
+            rules.forEach {
+                onRemoved(it.id)
             }
         }
+    }
 
-        val proxies = LinkedList<AbstractBean>()
-        try {
-            // sip008
-            val ssArray = try {
-                JSONArray(text)
-            } catch (e: JSONException) {
-                JSONObject(text).getJSONArray("servers")
-            } catch (e: JSONException) {
-                throw e
+    suspend fun getRules(): List<RuleEntity> {
+        var rules = SagerDatabase.rulesDao.allRules()
+        if (rules.isEmpty() && !DataStore.rulesFirstCreate) {
+            DataStore.rulesFirstCreate = true
+            createRule(
+                RuleEntity(
+                    name = app.getString(R.string.route_opt_block_ads),
+                    domains = "geosite:category-ads-all",
+                    outbound = -2
+                )
+            )
+            var country = Locale.getDefault().country.lowercase()
+            var displayCountry = Locale.getDefault().displayCountry
+            if (country !in arrayOf(
+                    "ir"
+                )
+            ) {
+                country = Locale.CHINA.country.lowercase()
+                displayCountry = Locale.CHINA.displayCountry
+                createRule(
+                    RuleEntity(
+                        name = app.getString(R.string.route_bypass_domain, displayCountry),
+                        domains = "geosite:$country",
+                        outbound = -1
+                    ), false
+                )
             }
-            try {
-                for (index in 0 until ssArray.length()) {
-                    proxies.add(parseShadowsocks(ssArray.getJSONObject(index)))
-                }
-            } catch (e: Exception) {
-                throw  e
-            }
-            return 0 to proxies
-        } catch (ignored: JSONException) {
+            createRule(
+                RuleEntity(
+                    name = app.getString(R.string.route_bypass_ip, displayCountry),
+                    ip = "geoip:$country",
+                    outbound = -1
+                ), false
+            )
+            rules = SagerDatabase.rulesDao.allRules()
         }
-
-        if (text.contains("proxies:\n")) {
-
-            // clash
-            for (proxy in (Yaml().loadAs(text,
-                Map::class.java)["proxies"] as List<Map<String, Any?>>)) {
-                val type = proxy["type"] as String
-                when (type) {
-                    "ss" -> {
-                        var pluginStr = ""
-                        if (proxy.contains("plugin")) {
-                            val opts = PluginOptions()
-                            opts.id = proxy["plugin"] as String
-                            opts.putAll(proxy["plugin-opts"] as Map<String, String?>)
-                            pluginStr = opts.toString(false)
-                        }
-                        proxies.add(ShadowsocksBean().apply {
-                            serverAddress = proxy["server"] as String
-                            serverPort = proxy["port"].toString().toInt()
-                            password = proxy["password"] as String
-                            method = proxy["cipher"] as String
-                            plugin = pluginStr
-                            name = proxy["name"] as String? ?: ""
-
-                            fixInvalidParams()
-                        })
-                    }
-                    "vmess" -> {
-                        val bean = VMessBean()
-                        for (opt in proxy) {
-                            when (opt.key) {
-                                "name" -> bean.name = opt.value as String
-                                "server" -> bean.serverAddress = opt.value as String
-                                "port" -> bean.serverPort = opt.value.toString().toInt()
-                                "uuid" -> bean.uuid = opt.value as String
-                                "alterId" -> bean.alterId = opt.value.toString().toInt()
-                                "cipher" -> bean.security = opt.value as String
-                                "network" -> bean.network = opt.value as String
-                                "tls" -> bean.tls = opt.value?.toString() == "true"
-                                "ws-path" -> bean.path = opt.value as String
-                                "servername" -> bean.requestHost = opt.value as String
-                                "h2-opts" -> for (h2Opt in (opt.value as Map<String, Any>)) {
-                                    when (h2Opt.key) {
-                                        "host" -> bean.requestHost =
-                                            (h2Opt.value as List<String>).first()
-                                        "path" -> bean.path = h2Opt.value as String
-                                    }
-                                }
-                                "http-opts" -> for (httpOpt in (opt.value as Map<String, Any>)) {
-                                    when (httpOpt.key) {
-                                        "path" -> bean.path =
-                                            (httpOpt.value as List<String>).first()
-                                    }
-                                }
-                            }
-                        }
-                        proxies.add(bean)
-                    }
-
-
-                    "trojan" -> {
-                        val bean = TrojanBean()
-                        for (opt in proxy) {
-                            when (opt.key) {
-                                "name" -> bean.name = opt.value as String
-                                "server" -> bean.serverAddress = opt.value as String
-                                "port" -> bean.serverPort = opt.value.toString().toInt()
-                                "password" -> bean.password = opt.value as String
-                                "sni" -> bean.sni = opt.value as String
-                            }
-                        }
-                        bean.initDefaultValues()
-                        proxies.add(bean)
-                    }
-
-                    "ssr" -> {
-                        val entity = ShadowsocksRBean()
-                        for (opt in proxy) {
-                            when (opt.key) {
-                                "name" -> entity.name = opt.value as String
-                                "server" -> entity.serverAddress = opt.value as String
-                                "port" -> entity.serverPort = opt.value.toString().toInt()
-                                "cipher" -> entity.method = opt.value as String
-                                "password" -> entity.password = opt.value as String
-                                "obfs" -> entity.obfs = opt.value as String
-                                "protocol" -> entity.protocol = opt.value as String
-                                "obfs-param" -> entity.obfsParam = opt.value as String
-                                "protocol-param" -> entity.protocolParam =
-                                    opt.value as String
-                            }
-                        }
-                        proxies.add(entity)
-                    }
-                }
-            }
-            return 1 to proxies
-        }
-
-        val results = parseProxies(text)
-        if (results.isEmpty()) error(app.getString(R.string.no_proxies_found))
-        return 2 to results
-
+        return rules
     }
 
 }

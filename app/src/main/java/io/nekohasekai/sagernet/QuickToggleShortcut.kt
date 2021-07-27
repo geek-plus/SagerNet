@@ -20,22 +20,21 @@
 
 package io.nekohasekai.sagernet
 
+import android.app.Activity
 import android.content.Intent
 import android.content.pm.ShortcutManager
 import android.os.Build
 import android.os.Bundle
-import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.getSystemService
 import androidx.core.content.pm.ShortcutInfoCompat
 import androidx.core.content.pm.ShortcutManagerCompat
 import androidx.core.graphics.drawable.IconCompat
-import io.nekohasekai.sagernet.aidl.IShadowsocksService
+import io.nekohasekai.sagernet.aidl.ISagerNetService
 import io.nekohasekai.sagernet.bg.BaseService
 import io.nekohasekai.sagernet.bg.SagerConnection
 
 @Suppress("DEPRECATION")
-@Deprecated("This shortcut is inefficient and should be superseded by TileService for API 24+.")
-class QuickToggleShortcut : AppCompatActivity(), SagerConnection.Callback {
+class QuickToggleShortcut : Activity(), SagerConnection.Callback {
     private val connection = SagerConnection()
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -61,7 +60,7 @@ class QuickToggleShortcut : AppCompatActivity(), SagerConnection.Callback {
         super.onServiceDisconnected()
     }
 
-    override fun onServiceConnected(service: IShadowsocksService) {
+    override fun onServiceConnected(service: ISagerNetService) {
         val state = BaseService.State.values()[service.state]
         when {
             state.canStop -> SagerNet.stopService()

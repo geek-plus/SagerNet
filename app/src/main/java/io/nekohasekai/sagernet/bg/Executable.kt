@@ -39,13 +39,16 @@ object Executable {
     fun killAll() {
         for (process in File("/proc").listFiles { _, name -> TextUtils.isDigitsOnly(name) }
             ?: return) {
-            val exe = File(try {
-                File(process, "cmdline").inputStream().bufferedReader().readText()
-            } catch (_: IOException) {
-                continue
-            }.split(Character.MIN_VALUE, limit = 2).first())
+            val exe = File(
+                try {
+                    File(process, "cmdline").inputStream().bufferedReader().readText()
+                } catch (_: IOException) {
+                    continue
+                }.split(Character.MIN_VALUE, limit = 2).first()
+            )
             if (EXECUTABLES.contains(exe.name)) try {
                 Os.kill(process.name.toInt(), OsConstants.SIGKILL)
+                Logs.w("SIGKILL ${exe.nameWithoutExtension} (${process.name}) succeed")
             } catch (e: ErrnoException) {
                 if (e.errno != OsConstants.ESRCH) {
                     Logs.w("SIGKILL ${exe.absolutePath} (${process.name}) failed")

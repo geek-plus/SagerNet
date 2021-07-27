@@ -34,12 +34,16 @@ import io.nekohasekai.sagernet.fmt.gson.GsonConverters
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
 
-@Database(entities = [ProxyGroup::class, ProxyEntity::class, KeyValuePair::class], version = 3)
+@Database(
+    entities = [ProxyGroup::class, ProxyEntity::class, RuleEntity::class, KeyValuePair::class],
+    version = 2
+)
 @TypeConverters(value = [KryoConverters::class, GsonConverters::class])
 @GenerateRoomMigrations
 abstract class SagerDatabase : RoomDatabase() {
 
     companion object {
+        @Suppress("EXPERIMENTAL_API_USAGE")
         private val instance by lazy {
             SagerNet.application.getDatabasePath(Key.DB_PROFILE).parentFile?.mkdirs()
             Room.databaseBuilder(SagerNet.application, SagerDatabase::class.java, Key.DB_PROFILE)
@@ -54,11 +58,13 @@ abstract class SagerDatabase : RoomDatabase() {
         val profileCacheDao get() = instance.profileCacheDao()
         val groupDao get() = instance.groupDao()
         val proxyDao get() = instance.proxyDao()
+        val rulesDao get() = instance.rulesDao()
 
     }
 
     abstract fun profileCacheDao(): KeyValuePair.Dao
     abstract fun groupDao(): ProxyGroup.Dao
     abstract fun proxyDao(): ProxyEntity.Dao
+    abstract fun rulesDao(): RuleEntity.Dao
 
 }

@@ -29,29 +29,25 @@ import android.view.View
 import androidx.activity.result.component1
 import androidx.activity.result.component2
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.appcompat.app.AlertDialog
 import androidx.fragment.app.setFragmentResultListener
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.whenCreated
 import androidx.preference.EditTextPreference
 import androidx.preference.Preference
-import androidx.preference.PreferenceFragmentCompat
-import cn.hutool.core.util.NumberUtil
 import com.github.shadowsocks.plugin.*
 import com.github.shadowsocks.plugin.fragment.AlertDialogFragment
 import com.github.shadowsocks.preference.PluginConfigurationDialogFragment
 import com.github.shadowsocks.preference.PluginPreference
 import com.github.shadowsocks.preference.PluginPreferenceDialogFragment
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.snackbar.Snackbar
+import com.takisoft.preferencex.PreferenceFragmentCompat
 import io.nekohasekai.sagernet.Key
 import io.nekohasekai.sagernet.R
 import io.nekohasekai.sagernet.database.DataStore
 import io.nekohasekai.sagernet.database.preference.EditTextPreferenceModifiers
 import io.nekohasekai.sagernet.fmt.shadowsocks.ShadowsocksBean
-import io.nekohasekai.sagernet.ktx.Empty
-import io.nekohasekai.sagernet.ktx.listenForPackageChanges
-import io.nekohasekai.sagernet.ktx.readableMessage
-import io.nekohasekai.sagernet.ktx.runOnDefaultDispatcher
+import io.nekohasekai.sagernet.ktx.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
@@ -64,10 +60,6 @@ class ShadowsocksSettingsActivity : ProfileSettingsActivity<ShadowsocksBean>(),
     private lateinit var pluginConfigure: EditTextPreference
     private lateinit var pluginConfiguration: PluginConfiguration
     private lateinit var receiver: BroadcastReceiver
-
-    override fun init() {
-        ShadowsocksBean.DEFAULT_BEAN.init()
-    }
 
     override fun ShadowsocksBean.init() {
         DataStore.profileName = name
@@ -167,7 +159,8 @@ class ShadowsocksSettingsActivity : ProfileSettingsActivity<ShadowsocksBean>(),
     override fun onPreferenceChange(preference: Preference?, newValue: Any?): Boolean = try {
         val selected = pluginConfiguration.selected
         pluginConfiguration = PluginConfiguration((pluginConfiguration.pluginsOptions +
-                (pluginConfiguration.selected to PluginOptions(selected, newValue as? String?))).toMutableMap(),
+                (pluginConfiguration.selected to PluginOptions(selected,
+                    newValue as? String?))).toMutableMap(),
             selected)
         DataStore.serverPlugin = pluginConfiguration.toString()
         DataStore.dirty = true
@@ -209,12 +202,12 @@ class ShadowsocksSettingsActivity : ProfileSettingsActivity<ShadowsocksBean>(),
         return true
     }
 
-    val pluginHelp =
-        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { (resultCode, data) ->
-            if (resultCode == Activity.RESULT_OK) AlertDialog.Builder(this)
-                .setTitle("?")
-                .setMessage(data?.getCharSequenceExtra(PluginContract.EXTRA_HELP_MESSAGE))
-                .show()
-        }
+    val pluginHelp = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()) { (resultCode, data) ->
+        if (resultCode == Activity.RESULT_OK) MaterialAlertDialogBuilder(this)
+            .setTitle("?")
+            .setMessage(data?.getCharSequenceExtra(PluginContract.EXTRA_HELP_MESSAGE))
+            .show()
+    }
 
 }

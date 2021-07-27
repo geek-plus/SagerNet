@@ -21,52 +21,44 @@
 
 package io.nekohasekai.sagernet.ui
 
-import android.annotation.SuppressLint
-import android.content.DialogInterface
+import android.content.Intent
 import android.os.Bundle
-import android.os.Parcelable
+import android.text.format.Formatter
 import android.view.MenuItem
 import android.view.View
 import android.view.ViewGroup
-import android.widget.EditText
 import android.widget.LinearLayout
-import android.widget.TextView
-import androidx.appcompat.app.AlertDialog
-import androidx.appcompat.widget.AppCompatImageView
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.widget.PopupMenu
 import androidx.appcompat.widget.Toolbar
-import androidx.core.view.ViewCompat
-import androidx.core.view.isGone
-import androidx.core.view.isInvisible
-import androidx.core.view.isVisible
-import androidx.core.widget.addTextChangedListener
+import androidx.core.view.*
 import androidx.recyclerview.widget.ItemTouchHelper
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
-import cn.hutool.core.date.DateUtil
-import com.github.shadowsocks.plugin.fragment.AlertDialogFragment
-import com.google.android.material.button.MaterialButton
-import com.google.android.material.textfield.TextInputLayout
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import io.nekohasekai.sagernet.GroupType
 import io.nekohasekai.sagernet.R
-import io.nekohasekai.sagernet.database.*
+import io.nekohasekai.sagernet.SagerNet
+import io.nekohasekai.sagernet.database.DataStore
+import io.nekohasekai.sagernet.database.GroupManager
+import io.nekohasekai.sagernet.database.ProxyGroup
+import io.nekohasekai.sagernet.database.SagerDatabase
+import io.nekohasekai.sagernet.databinding.LayoutGroupItemBinding
+import io.nekohasekai.sagernet.fmt.toUniversalLink
+import io.nekohasekai.sagernet.group.GroupUpdater
 import io.nekohasekai.sagernet.ktx.*
 import io.nekohasekai.sagernet.widget.ListHolderListener
+import io.nekohasekai.sagernet.widget.QRCodeDialog
 import io.nekohasekai.sagernet.widget.UndoSnackbarManager
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.runBlocking
-import kotlinx.parcelize.Parcelize
-import okhttp3.Call
-import okhttp3.Callback
-import okhttp3.HttpUrl.Companion.toHttpUrl
-import okhttp3.Request
-import okhttp3.Response
-import java.io.IOException
 import java.util.*
-import kotlin.collections.ArrayList
 
-class GroupFragment : ToolbarFragment(R.layout.layout_group), Toolbar.OnMenuItemClickListener {
+class GroupFragment : ToolbarFragment(R.layout.layout_group),
+    Toolbar.OnMenuItemClickListener {
 
     lateinit var activity: MainActivity
     lateinit var groupListView: RecyclerView
+    lateinit var layoutManager: LinearLayoutManager
     lateinit var groupAdapter: GroupAdapter
     lateinit var undoManager: UndoSnackbarManager<ProxyGroup>
 
@@ -80,26 +72,30 @@ class GroupFragment : ToolbarFragment(R.layout.layout_group), Toolbar.OnMenuItem
         toolbar.setOnMenuItemClickListener(this)
 
         groupListView = view.findViewById(R.id.group_list)
-        groupListView.layoutManager = LinearLayoutManager(requireContext())
+        layoutManager = FixedLinearLayoutManager(groupListView)
+        groupListView.layoutManager = layoutManager
         groupAdapter = GroupAdapter()
-        ProfileManager.addListener(groupAdapter)
+        GroupManager.addListener(groupAdapter)
         groupListView.adapter = groupAdapter
 
-        undoManager =
-            UndoSnackbarManager(activity, groupAdapter)
+        undoManager = UndoSnackbarManager(activity, groupAdapter)
 
-        ItemTouchHelper(object :
-            ItemTouchHelper.SimpleCallback(ItemTouchHelper.UP or ItemTouchHelper.DOWN,
-                ItemTouchHelper.START) {
+        ItemTouchHelper(object : ItemTouchHelper.SimpleCallback(
+            ItemTouchHelper.UP or ItemTouchHelper.DOWN, ItemTouchHelper.START
+        ) {
             override fun getSwipeDirs(
                 recyclerView: RecyclerView,
                 viewHolder: RecyclerView.ViewHolder,
-            ) = if (!(viewHolder as GroupHolder).proxyGroup.isDefault) {
-                super.getSwipeDirs(recyclerView, viewHolder)
-            } else 0
+            ): Int {
+                val proxyGroup = (viewHolder as GroupHolder).proxyGroup
+                if (proxyGroup.ungrouped || proxyGroup.id in GroupUpdater.updating) {
+                    return 0
+                }
+                return super.getSwipeDirs(recyclerView, viewHolder)
+            }
 
             override fun onSwiped(viewHolder: RecyclerView.ViewHolder, direction: Int) {
-                val index = viewHolder.adapterPosition
+                val index = viewHolder.bindingAdapterPosition
                 groupAdapter.remove(index)
                 undoManager.remove(index to (viewHolder as GroupHolder).proxyGroup)
             }
@@ -108,7 +104,7 @@ class GroupFragment : ToolbarFragment(R.layout.layout_group), Toolbar.OnMenuItem
                 recyclerView: RecyclerView,
                 viewHolder: RecyclerView.ViewHolder, target: RecyclerView.ViewHolder,
             ): Boolean {
-                groupAdapter.move(viewHolder.adapterPosition, target.adapterPosition)
+                groupAdapter.move(viewHolder.bindingAdapterPosition, target.bindingAdapterPosition)
                 return true
             }
 
@@ -125,310 +121,53 @@ class GroupFragment : ToolbarFragment(R.layout.layout_group), Toolbar.OnMenuItem
 
     override fun onMenuItemClick(item: MenuItem): Boolean {
         when (item.itemId) {
-            R.id.action_create_group -> createGroup(false)
-            R.id.action_from_link -> createGroup(true)
+            R.id.action_new_group -> {
+                startActivity(Intent(context, GroupSettingsActivity::class.java))
+            }
         }
         return true
     }
 
-    fun createGroup(isSubscription: Boolean) {
-        EditGroupFragment().apply {
-            arg(GroupInfo(isSubscription))
-            key()
-        }.show(parentFragmentManager, "create_group")
-    }
+    private lateinit var selectedGroup: ProxyGroup
 
-    @Parcelize
-    data class GroupInfo(
-        val isSubscription: Boolean = false,
-        val proxyGroup: ProxyGroup? = null,
-    ) : Parcelable
-
-    private suspend fun updateSubscription(
-        proxyGroup: ProxyGroup,
-        onRefreshStarted: Runnable,
-        onRefreshFinished: Runnable,
-    ) {
-        onRefreshStarted.run()
-
-        runOnDefaultDispatcher {
-            createHttpClient().newCall(Request.Builder()
-                .url(proxyGroup.subscriptionLink)
-                .build())
-                .enqueue(object : Callback {
-                    override fun onFailure(call: Call, e: IOException) {
-                        runOnMainDispatcher {
-                            onRefreshFinished.run()
-
-                            activity.snackbar(e.readableMessage).show()
-                        }
-                    }
-
-                    override fun onResponse(call: Call, response: Response) {
-                        val (subType, proxies) = try {
-                            ProfileManager.parseSubscription((response.body
-                                ?: error("Empty response")).string())
-                        } catch (e: Exception) {
-                            runOnMainDispatcher {
-                                onRefreshFinished.run()
-
-                                activity.snackbar(e.readableMessage).show()
-                            }
-                            return
-                        }
-
-                        val nameMap = mapOf(* proxies.map { bean ->
-                            (bean.name.takeIf { !it.isNullOrBlank() }
-                                ?: "${bean.serverAddress}:${bean.serverPort}") to bean
-                        }.toTypedArray())
-
-                        val exists = SagerDatabase.proxyDao.getByGroup(proxyGroup.id)
-                        val toDelete = LinkedList<ProxyEntity>()
-                        val toReplace = exists.mapNotNull { entity ->
-                            val name = entity.displayName()
-                            if (nameMap.contains(name)) name to entity else let {
-                                toDelete.add(entity)
-                                null
-                            }
-                        }.toMap()
-                        val toUpdate = LinkedList<ProxyEntity>()
-
-                        val added = mutableListOf<String>()
-                        val updated = mutableMapOf<String, String>()
-                        val deleted = toDelete.map { it.displayName() }
-
-                        var userOrder = 1L
-                        var changed = toDelete.size
-                        for ((name, bean) in nameMap.entries) {
-                            if (toReplace.contains(name)) {
-                                val entity = toReplace[name]!!
-                                if ((entity.requireBean() != bean).also { if (it) changed++ } || entity.userOrder != userOrder) {
-                                    entity.putBean(bean)
-                                    entity.userOrder = userOrder
-                                    toUpdate.add(entity)
-                                    updated.put(entity.displayName(), name)
-                                }
-                            } else {
-                                changed++
-                                SagerDatabase.proxyDao.addProxy(ProxyEntity(
-                                    groupId = proxyGroup.id,
-                                    userOrder = userOrder
-                                ).apply {
-                                    putBean(bean)
-                                })
-                                added.add(name)
-                            }
-                            userOrder++
-                        }
-
-                        SagerDatabase.proxyDao.updateProxy(* toUpdate.toTypedArray())
-                        SagerDatabase.proxyDao.deleteProxy(* toDelete.toTypedArray())
-
-                        runBlocking {
-                            ProfileManager.updateGroup(proxyGroup.apply {
-                                lastUpdate = System.currentTimeMillis()
-                                type = subType
-                            })
-
-                            ProfileManager.postReload(proxyGroup.id)
-                            onMainDispatcher {
-                                onRefreshFinished.run()
-
-                                if (changed == 0) {
-                                    activity.snackbar(activity.getString(R.string.group_no_difference))
-                                        .show()
-                                } else {
-                                    activity.snackbar(activity.getString(R.string.group_updated,
-                                        changed)).setAction(R.string.group_show_diff) {
-
-
-                                        var status = ""
-                                        if (added.isNotEmpty()) {
-                                            status += activity.getString(R.string.group_added,
-                                                added.joinToString("\n", postfix = "\n\n"))
-                                        }
-                                        if (updated.isNotEmpty()) {
-                                            status += activity.getString(R.string.group_changed,
-                                                updated.map { it }
-                                                    .joinToString("\n", postfix = "\n\n") {
-                                                        if (it.key == it.value) it.key else "${it.key} => ${it.value}"
-                                                    })
-                                        }
-                                        if (deleted.isNotEmpty()) {
-                                            status += activity.getString(R.string.group_deleted,
-                                                deleted.joinToString("\n", postfix = "\n\n"))
-                                        }
-
-                                        val dialog = AlertDialog.Builder(activity)
-                                            .setTitle(R.string.group_show_diff)
-                                            .setMessage(status.trim())
-                                            .setPositiveButton(android.R.string.ok, null)
-                                            .show()
-                                    }.show()
-                                }
-                            }
-                        }
-                    }
-                })
-        }
-    }
-
-    class EditGroupFragment : AlertDialogFragment<GroupInfo, Empty>() {
-
-        lateinit var nameEditText: EditText
-        lateinit var nameLayout: TextInputLayout
-
-        lateinit var linkEditText: EditText
-        lateinit var linkLayout: TextInputLayout
-
-        val positive by lazy { (dialog as AlertDialog).getButton(AlertDialog.BUTTON_POSITIVE) }
-
-        override fun AlertDialog.Builder.prepare(listener: DialogInterface.OnClickListener) {
-            val activity = requireActivity()
-
-            @SuppressLint("InflateParams")
-            val view = activity.layoutInflater.inflate(R.layout.layout_edit_group, null)
-            val proxyGroup = arg.proxyGroup
-
-            nameLayout = view.findViewById(R.id.group_name_layout)
-            nameEditText = view.findViewById(R.id.group_name)
-            if (proxyGroup != null) {
-                nameEditText.setText(proxyGroup.displayName())
-            }
-
-            nameEditText.addTextChangedListener {
-                validate()
-            }
-
-            linkLayout = view.findViewById(R.id.group_links_layout)
-            if (!arg.isSubscription) {
-                linkLayout.isGone = true
-            } else {
-                linkEditText = view.findViewById(R.id.group_subscription_link)
-                if (proxyGroup != null) {
-                    linkEditText.setText(proxyGroup.subscriptionLink)
-                }
-                linkEditText.addTextChangedListener {
-                    validate()
-                }
-            }
-
-            setTitle(if (arg.proxyGroup == null) {
-                if (!arg.isSubscription) {
-                    R.string.group_create
-                } else {
-                    R.string.group_create_subscription
-                }
-            } else {
-                if (!arg.isSubscription) {
-                    R.string.group_edit
-                } else {
-                    R.string.group_edit_subscription
-                }
-            })
-
-            setPositiveButton(android.R.string.ok, listener)
-            setNegativeButton(android.R.string.cancel, null)
-
-            if (proxyGroup != null && !proxyGroup.isDefault) {
-                setNeutralButton(R.string.delete, listener)
-            }
-
-            setView(view)
-        }
-
-        override fun onStart() {
-            super.onStart()
-
-            positive.isEnabled = false
-        }
-
-        fun validate() {
-            var pass = true
-
-            val name = nameEditText.text
-            if (name.isBlank()) {
-                pass = false
-                nameLayout.isErrorEnabled = true
-                nameLayout.error = getString(R.string.group_name_required)
-            } else {
-                nameLayout.isErrorEnabled = false
-            }
-
-            if (arg.isSubscription) {
-                val link = linkEditText.text
-                if (link.isNotBlank()) {
+    private val exportProfiles =
+        registerForActivityResult(ActivityResultContracts.CreateDocument()) { data ->
+            if (data != null) {
+                runOnDefaultDispatcher {
+                    val profiles = SagerDatabase.proxyDao.getByGroup(DataStore.selectedGroup)
+                    val links = profiles.mapNotNull { it.toLink() }.joinToString("\n")
                     try {
-                        val url = link.toString().toHttpUrl()
-                        if ("http".equals(url.scheme, true)) {
-                            linkLayout.error = getString(R.string.cleartext_http_warning)
-                            linkLayout.isErrorEnabled = true
-                        } else {
-                            linkLayout.isErrorEnabled = false
+                        (requireActivity() as MainActivity).contentResolver.openOutputStream(
+                            data
+                        )!!.bufferedWriter().use {
+                            it.write(links)
+                        }
+                        onMainDispatcher {
+                            snackbar(getString(R.string.action_export_msg)).show()
                         }
                     } catch (e: Exception) {
-                        linkLayout.error = e.readableMessage
-                        linkLayout.isErrorEnabled = true
+                        Logs.w(e)
+                        onMainDispatcher {
+                            snackbar(e.readableMessage).show()
+                        }
                     }
-                } else {
-                    linkLayout.isErrorEnabled = false
-                    pass = false
+
                 }
             }
-            positive.isEnabled = pass
         }
 
-        override fun onClick(dialog: DialogInterface?, which: Int) {
-            if (which == DialogInterface.BUTTON_POSITIVE) {
-                runOnDefaultDispatcher {
-                    var proxyGroup =
-                        arg.proxyGroup ?: ProxyGroup().apply { isSubscription = arg.isSubscription }
-
-                    proxyGroup.name = nameEditText.text.toString()
-                    if (proxyGroup.isSubscription) {
-                        proxyGroup.subscriptionLink = linkEditText.text.toString()
-                    }
-
-                    if (arg.proxyGroup == null) {
-                        proxyGroup = ProfileManager.createGroup(proxyGroup)
-                    } else {
-                        ProfileManager.updateGroup(proxyGroup)
-                    }
-
-                    if (proxyGroup.isSubscription) {
-                        ProfileManager.groupIterator { refreshSubscription(proxyGroup) }
-                    }
-                }
-            } else if (which == DialogInterface.BUTTON_NEUTRAL) {
-                DeleteConfirmationDialogFragment().apply {
-                    arg(GroupIdToDelete(arg.proxyGroup!!.id))
-                    key()
-                }.show(parentFragmentManager, "delete_group")
-            }
-        }
-    }
-
-    @Parcelize
-    data class GroupIdToDelete(val groupId: Long) : Parcelable
-    class DeleteConfirmationDialogFragment : AlertDialogFragment<GroupIdToDelete, Empty>() {
-        override fun AlertDialog.Builder.prepare(listener: DialogInterface.OnClickListener) {
-            setTitle(R.string.group_delete_confirm_prompt)
-            setPositiveButton(R.string.yes) { _, _ ->
-                runOnDefaultDispatcher {
-                    ProfileManager.deleteGroup(arg.groupId)
-                }
-            }
-            setNegativeButton(R.string.no, null)
-        }
-    }
-
-    inner class GroupAdapter : RecyclerView.Adapter<GroupHolder>(), ProfileManager.GroupListener,
+    inner class GroupAdapter : RecyclerView.Adapter<GroupHolder>(),
+        GroupManager.Listener,
         UndoSnackbarManager.Interface<ProxyGroup> {
 
         val groupList = ArrayList<ProxyGroup>()
 
         suspend fun reload() {
-            val groups = SagerDatabase.groupDao.allGroups()
+            val groups = SagerDatabase.groupDao.allGroups().toMutableList()
+            val hideUngrouped =
+                SagerDatabase.proxyDao.countByGroup(groups.find { it.ungrouped }!!.id) == 0L
+            if (groups.size > 1 && hideUngrouped) groups.removeAll { it.ungrouped }
+
             groupList.clear()
             groupList.addAll(groups)
             groupListView.post {
@@ -443,9 +182,7 @@ class GroupFragment : ToolbarFragment(R.layout.layout_group), Toolbar.OnMenuItem
         }
 
         override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): GroupHolder {
-            return GroupHolder(
-                layoutInflater.inflate(R.layout.layout_group_item, parent, false)
-            )
+            return GroupHolder(LayoutGroupItemBinding.inflate(layoutInflater, parent, false))
         }
 
         override fun onBindViewHolder(holder: GroupHolder, position: Int) {
@@ -465,8 +202,9 @@ class GroupFragment : ToolbarFragment(R.layout.layout_group), Toolbar.OnMenuItem
         fun move(from: Int, to: Int) {
             val first = groupList[from]
             var previousOrder = first.userOrder
-            val (step, range) = if (from < to) Pair(1, from until to) else Pair(-1,
-                to + 1 downTo from)
+            val (step, range) = if (from < to) Pair(1, from until to) else Pair(
+                -1, to + 1 downTo from
+            )
             for (i in range) {
                 val next = groupList[i + step]
                 val order = next.userOrder
@@ -499,23 +237,35 @@ class GroupFragment : ToolbarFragment(R.layout.layout_group), Toolbar.OnMenuItem
         }
 
         override fun commit(actions: List<Pair<Int, ProxyGroup>>) {
-            val groups = actions.map { it.second }.toTypedArray()
+            val groups = actions.map { it.second }
             runOnDefaultDispatcher {
-                ProfileManager.deleteGroup(* groups)
+                GroupManager.deleteGroup(groups)
+                reload()
             }
         }
 
-        override suspend fun onAdd(group: ProxyGroup) {
+        override suspend fun groupAdd(group: ProxyGroup) {
+            if (groupList.size == 1 && groupList[0].ungrouped) {
+                groupList.clear()
+                onMainDispatcher {
+                    notifyItemRemoved(0)
+                }
+            }
+
             groupList.add(group)
             delay(300L)
 
             onMainDispatcher {
                 undoManager.flush()
                 notifyItemInserted(groupList.size - 1)
+
+                if (group.type == GroupType.SUBSCRIPTION) {
+                    GroupUpdater.startUpdate(group, true)
+                }
             }
         }
 
-        override suspend fun onRemoved(groupId: Long) {
+        override suspend fun groupRemoved(groupId: Long) {
             val index = groupList.indexOfFirst { it.id == groupId }
             if (index == -1) return
             onMainDispatcher {
@@ -526,7 +276,8 @@ class GroupFragment : ToolbarFragment(R.layout.layout_group), Toolbar.OnMenuItem
             }
         }
 
-        override suspend fun onUpdated(group: ProxyGroup) {
+
+        override suspend fun groupUpdated(group: ProxyGroup) {
             val index = groupList.indexOfFirst { it.id == group.id }
             if (index == -1) {
                 reload()
@@ -540,7 +291,7 @@ class GroupFragment : ToolbarFragment(R.layout.layout_group), Toolbar.OnMenuItem
             }
         }
 
-        override suspend fun onUpdated(groupId: Long) {
+        override suspend fun groupUpdated(groupId: Long) {
             val index = groupList.indexOfFirst { it.id == groupId }
             if (index == -1) {
                 reload()
@@ -551,28 +302,11 @@ class GroupFragment : ToolbarFragment(R.layout.layout_group), Toolbar.OnMenuItem
             }
         }
 
-        override suspend fun refreshSubscription(proxyGroup: ProxyGroup) {
-            for (i in 0 until 10) {
-                delay(200L)
-                ((groupListView.findViewHolderForAdapterPosition(groupAdapter.groupList.indexOfFirst { it.id == proxyGroup.id }) as? GroupHolder)
-                    ?: continue).refreshRunnable(true)
-                return
-            }
-        }
-
-        override suspend fun refreshSubscription(
-            proxyGroup: ProxyGroup,
-            onRefreshStarted: Runnable,
-            onRefreshFinished: Runnable,
-        ) {
-            updateSubscription(proxyGroup, onRefreshStarted, onRefreshFinished)
-        }
-
     }
 
     override fun onDestroy() {
         if (::groupAdapter.isInitialized) {
-            ProfileManager.removeListener(groupAdapter)
+            GroupManager.removeListener(groupAdapter)
         }
 
         super.onDestroy()
@@ -581,99 +315,184 @@ class GroupFragment : ToolbarFragment(R.layout.layout_group), Toolbar.OnMenuItem
         undoManager.flush()
     }
 
-    inner class GroupHolder(val view: View) : RecyclerView.ViewHolder(view) {
+
+    inner class GroupHolder(binding: LayoutGroupItemBinding) : RecyclerView.ViewHolder(binding.root),
+        PopupMenu.OnMenuItemClickListener {
 
         lateinit var proxyGroup: ProxyGroup
-        val groupName: TextView = view.findViewById(R.id.group_name)
-        val groupStatus: TextView = view.findViewById(R.id.group_status)
-        val editButton: AppCompatImageView = view.findViewById(R.id.edit)
-        val shareButton: AppCompatImageView = view.findViewById(R.id.share)
-        val updateButton: MaterialButton = view.findViewById(R.id.group_update)
-        val subscriptionUpdateProgress: LinearLayout =
-            view.findViewById(R.id.subscription_update_progress)
-        var refreshing = false
+        val groupName = binding.groupName
+        val groupStatus = binding.groupStatus
+        val groupTraffic = binding.groupTraffic
+        val groupUser = binding.groupUser
+        val editButton = binding.edit
+        val optionsButton = binding.options
+        val updateButton = binding.groupUpdate
+        val subscriptionUpdateProgress = binding.subscriptionUpdateProgress
 
-        val refreshRunnable = { needGo: Boolean ->
-            runOnDefaultDispatcher {
-                var uVisible = false
+        override fun onMenuItemClick(item: MenuItem): Boolean {
+            fun showCode(link: String) {
+                QRCodeDialog(link).showAllowingStateLoss(parentFragmentManager)
+            }
 
-                ProfileManager.groupIterator {
-                    refreshSubscription(proxyGroup,
-                        {
-                            refreshing = true
-                            runOnMainDispatcher {
-                                subscriptionUpdateProgress.isVisible = true
-                                updateButton.isVisible = false
-                                if (editButton.isVisible) {
-                                    uVisible = true
-                                    editButton.isVisible = false
-                                    //    shareButton.isVisible = false
+            fun export(link: String) {
+                val success = SagerNet.trySetPrimaryClip(link)
+                (activity as MainActivity).snackbar(if (success) R.string.action_export_msg else R.string.action_export_err)
+                        .show()
+            }
+
+            when (item.itemId) {
+                R.id.action_universal_qr -> {
+                    showCode(proxyGroup.toUniversalLink())
+                }
+                R.id.action_universal_clipboard -> {
+                    export(proxyGroup.toUniversalLink())
+                }
+                R.id.action_export_clipboard -> {
+                    runOnDefaultDispatcher {
+                        val profiles = SagerDatabase.proxyDao.getByGroup(selectedGroup.id)
+                        val links = profiles.mapNotNull { it.toLink() }.joinToString("\n")
+                        SagerNet.trySetPrimaryClip(links)
+                        onMainDispatcher {
+                            snackbar(getString(R.string.copy_toast_msg)).show()
+                        }
+                    }
+                }
+                R.id.action_export_file -> {
+                    startFilesForResult(exportProfiles, "profiles.txt")
+                }
+                R.id.action_clear -> {
+                    MaterialAlertDialogBuilder(requireContext()).setTitle(R.string.confirm)
+                            .setMessage(R.string.clear_profiles_message)
+                            .setPositiveButton(R.string.yes) { _, _ ->
+                                runOnDefaultDispatcher {
+                                    GroupManager.clearGroup(proxyGroup.id)
                                 }
                             }
-                        },
-                        {
-                            runOnMainDispatcher {
-                                subscriptionUpdateProgress.isVisible = false
-                                updateButton.isVisible = true
-                                if (uVisible) {
-                                    editButton.isVisible = true
-                                }
-                                // shareButton.isVisible = true
-
-                                if (needGo) {
-                                    DataStore.selectedGroup = proxyGroup.id
-
-                                    activity.navController.navigate(R.id.nav_configuration)
-                                }
-                                refreshing = false
-                            }
-                        })
+                            .setNegativeButton(android.R.string.cancel, null)
+                            .show()
                 }
             }
+
+            return true
         }
+
 
         fun bind(group: ProxyGroup) {
             proxyGroup = group
 
-            view.setOnClickListener { }
+            itemView.setOnClickListener { }
 
-            updateButton.isInvisible = !proxyGroup.isSubscription
+            editButton.isGone = proxyGroup.ungrouped
+            updateButton.isInvisible = proxyGroup.type != GroupType.SUBSCRIPTION
             groupName.text = proxyGroup.displayName()
 
             editButton.setOnClickListener {
-
-                EditGroupFragment().apply {
-                    arg(GroupInfo(proxyGroup.isSubscription, group))
-                    key()
-                }.show(parentFragmentManager, "edit_group")
-
+                startActivity(Intent(it.context, GroupSettingsActivity::class.java).apply {
+                    putExtra(GroupSettingsActivity.EXTRA_GROUP_ID, group.id)
+                })
             }
 
             updateButton.setOnClickListener {
-                refreshRunnable(false)
+                GroupUpdater.startUpdate(proxyGroup, true)
             }
 
-            shareButton.isVisible = false
+            runOnDefaultDispatcher {
+                val showMenu = SagerDatabase.proxyDao.countByGroup(proxyGroup.id) > 0
+                onMainDispatcher {
+                    optionsButton.isVisible = showMenu
+                }
+            }
+            optionsButton.setOnClickListener {
+                selectedGroup = proxyGroup
+
+                val popup = PopupMenu(requireContext(), it)
+                popup.menuInflater.inflate(R.menu.group_action_menu, popup.menu)
+
+                if (proxyGroup.type != GroupType.SUBSCRIPTION) {
+                    popup.menu.removeItem(R.id.action_share)
+                }
+                popup.setOnMenuItemClickListener(this)
+                popup.show()
+            }
+
+            if (proxyGroup.id in GroupUpdater.updating) {
+                (groupName.parent as LinearLayout).apply {
+                    setPadding(paddingLeft, dp2px(11), paddingRight, paddingBottom)
+                }
+
+                subscriptionUpdateProgress.isVisible = true
+
+                if (!GroupUpdater.progress.containsKey(proxyGroup.id)) {
+                    subscriptionUpdateProgress.isIndeterminate = true
+                } else {
+                    subscriptionUpdateProgress.isIndeterminate = false
+                    val progress = GroupUpdater.progress[proxyGroup.id]!!
+                    subscriptionUpdateProgress.max = progress.max
+                    subscriptionUpdateProgress.progress = progress.progress
+                }
+
+                updateButton.isInvisible = true
+                editButton.isGone = true
+            } else {
+                (groupName.parent as LinearLayout).apply {
+                    setPadding(paddingLeft, dp2px(15), paddingRight, paddingBottom)
+                }
+
+                subscriptionUpdateProgress.isVisible = false
+                updateButton.isInvisible = proxyGroup.type != GroupType.SUBSCRIPTION
+                editButton.isGone = proxyGroup.ungrouped
+            }
+
+            val subscription = proxyGroup.subscription
+            val textLayout = groupTraffic.parent as View
+            if (subscription != null && subscription.bytesUsed > 0L) {
+                groupTraffic.isVisible = true
+                groupTraffic.text = if (subscription.bytesRemaining > 0L) {
+                    getString(
+                        R.string.subscription_traffic, Formatter.formatFileSize(
+                            context, subscription.bytesUsed
+                        ), Formatter.formatFileSize(
+                            context, subscription.bytesRemaining
+                        )
+                    )
+                } else {
+                    getString(
+                        R.string.subscription_used, Formatter.formatFileSize(
+                            context, subscription.bytesUsed
+                        )
+                    )
+                }
+                groupStatus.setPadding(0)
+            } else {
+                groupTraffic.isVisible = false
+                groupStatus.setPadding(0, 0, 0, dp2px(4))
+            }
+
+            groupUser.text = subscription?.username ?: ""
 
             runOnDefaultDispatcher {
                 val size = SagerDatabase.proxyDao.countByGroup(proxyGroup.id)
                 onMainDispatcher {
-                    if (!proxyGroup.isSubscription) {
-                        if (size == 0L) {
-                            groupStatus.setText(R.string.group_status_empty)
-                        } else {
-                            groupStatus.text =
-                                app.resources.getString(R.string.group_status_proxies, size)
+                    @Suppress("DEPRECATION") when (proxyGroup.type) {
+                        GroupType.BASIC -> {
+                            if (size == 0L) {
+                                groupStatus.setText(R.string.group_status_empty)
+                            } else {
+                                groupStatus.text = getString(R.string.group_status_proxies, size)
+                            }
                         }
-                    } else {
-                        if (size == 0L) {
-                            groupStatus.setText(R.string.group_status_empty_subscription)
-                        } else {
-                            groupStatus.text =
-                                app.resources.getString(R.string.group_status_proxies_subscription,
+                        GroupType.SUBSCRIPTION -> {
+                            groupStatus.text = if (size == 0L) {
+                                getString(R.string.group_status_empty_subscription)
+                            } else {
+                                val date = Date(group.subscription!!.lastUpdated * 1000L)
+                                getString(
+                                    R.string.group_status_proxies_subscription,
                                     size,
-                                    DateUtil.format(Date(group.lastUpdate), "MM-dd")
+                                    "${date.month + 1} - ${date.date}"
                                 )
+                            }
+
                         }
                     }
                 }

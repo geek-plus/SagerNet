@@ -23,7 +23,9 @@ package io.nekohasekai.sagernet.ui.profile
 
 import android.os.Bundle
 import androidx.preference.EditTextPreference
-import androidx.preference.PreferenceFragmentCompat
+import androidx.preference.SwitchPreference
+import com.takisoft.preferencex.PreferenceFragmentCompat
+import com.takisoft.preferencex.SimpleMenuPreference
 import io.nekohasekai.sagernet.Key
 import io.nekohasekai.sagernet.R
 import io.nekohasekai.sagernet.database.DataStore
@@ -34,16 +36,15 @@ class TrojanSettingsActivity : ProfileSettingsActivity<TrojanBean>() {
 
     override fun createEntity() = TrojanBean()
 
-    override fun init() {
-        TrojanBean.DEFAULT_BEAN.init()
-    }
-
     override fun TrojanBean.init() {
         DataStore.profileName = name
         DataStore.serverAddress = serverAddress
         DataStore.serverPort = serverPort
         DataStore.serverPassword = password
+        DataStore.serverSecurity = security
         DataStore.serverSNI = sni
+        DataStore.serverALPN = alpn
+        DataStore.serverAllowInsecure = allowInsecure
     }
 
     override fun TrojanBean.serialize() {
@@ -51,8 +52,16 @@ class TrojanSettingsActivity : ProfileSettingsActivity<TrojanBean>() {
         serverAddress = DataStore.serverAddress
         serverPort = DataStore.serverPort
         password = DataStore.serverPassword
+        security = DataStore.serverSecurity
         sni = DataStore.serverSNI
+        alpn = DataStore.serverALPN
+        allowInsecure = DataStore.serverAllowInsecure
     }
+
+    lateinit var security: SimpleMenuPreference
+    lateinit var tlsSni: EditTextPreference
+    lateinit var tlsAlpn: EditTextPreference
+    lateinit var allowInsecure: SwitchPreference
 
     override fun PreferenceFragmentCompat.createPreferences(
         savedInstanceState: Bundle?,
@@ -65,6 +74,11 @@ class TrojanSettingsActivity : ProfileSettingsActivity<TrojanBean>() {
         findPreference<EditTextPreference>(Key.SERVER_PASSWORD)!!.apply {
             summaryProvider = PasswordSummaryProvider
         }
+
+        security = findPreference(Key.SERVER_SECURITY)!!
+        tlsSni = findPreference(Key.SERVER_SNI)!!
+        tlsAlpn = findPreference(Key.SERVER_ALPN)!!
+        allowInsecure = findPreference(Key.SERVER_ALLOW_INSECURE)!!
     }
 
 }

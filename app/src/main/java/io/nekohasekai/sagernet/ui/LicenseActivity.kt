@@ -22,15 +22,11 @@
 package io.nekohasekai.sagernet.ui
 
 import android.os.Bundle
-import android.widget.TextView
-import androidx.appcompat.app.AppCompatActivity
 import com.mikepenz.aboutlibraries.LibsBuilder
 import io.nekohasekai.sagernet.R
-import io.nekohasekai.sagernet.ktx.onMainDispatcher
-import io.nekohasekai.sagernet.ktx.runOnDefaultDispatcher
 import io.nekohasekai.sagernet.widget.ListHolderListener
 
-class LicenseActivity : AppCompatActivity() {
+class LicenseActivity : ThemedActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -45,14 +41,10 @@ class LicenseActivity : AppCompatActivity() {
         }
         ListHolderListener.setup(this)
 
-        val libs = LibsBuilder()
-            .withAboutIconShown(false)
-            .withExcludedLibraries(
-                // Can't parse ${project.artifactId} in pom.xml
-                "cn_hutool__hutool_core",
-                "cn_hutool__hutool_json"
-            )
-            .supportFragment()
+        val libs =
+            LibsBuilder().withExcludedLibraries( // Can't parse ${project.artifactId} in pom.xml
+                "cn_hutool__hutool_core", "cn_hutool__hutool_json", "cn_hutool__hutool_crypto", "cn_hutool__hutool_cache"
+            ).withAboutIconShown(false).withFields(R.string::class.java.fields).supportFragment()
 
         supportFragmentManager.beginTransaction().replace(R.id.fragment_holder, libs)
             .commitAllowingStateLoss()

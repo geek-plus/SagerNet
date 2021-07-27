@@ -22,6 +22,8 @@
 package io.nekohasekai.sagernet.fmt.socks
 
 import cn.hutool.core.codec.Base64
+import io.nekohasekai.sagernet.ktx.decodeBase64UrlSafe
+import io.nekohasekai.sagernet.ktx.toLink
 import io.nekohasekai.sagernet.ktx.unUrlSafe
 import io.nekohasekai.sagernet.ktx.urlSafe
 import okhttp3.HttpUrl
@@ -34,9 +36,9 @@ fun parseSOCKS(link: String): SOCKSBean {
         if (url.contains("#")) {
             url = url.substringBeforeLast("#")
         }
-        url = Base64.decodeStr(url)
+        url = url.decodeBase64UrlSafe()
         val httpUrl = "http://$url".toHttpUrlOrNull() ?: error("Invalid v2rayN link content: $url")
-        return SOCKSBean.DEFAULT_BEAN.clone().apply {
+        return SOCKSBean().apply {
             serverAddress = httpUrl.host
             serverPort = httpUrl.port
             username = httpUrl.username.takeIf { it != "null" } ?: ""
@@ -44,7 +46,6 @@ fun parseSOCKS(link: String): SOCKSBean {
             if (link.contains("#")) {
                 name = link.substringAfter("#").unUrlSafe()
             }
-            udp = false
         }
     } else {
         val url = ("http://" + link
@@ -57,7 +58,8 @@ fun parseSOCKS(link: String): SOCKSBean {
             username = url.username
             password = url.password
             name = url.fragment
-            udp = url.queryParameter("udp") == "true"
+            tls = url.queryParameter("tls") == "true"
+            sni = url.queryParameter("sni")
         }
     }
 }
@@ -70,9 +72,14 @@ fun SOCKSBean.toUri(): String {
         .port(serverPort)
     if (!username.isNullOrBlank()) builder.username(username)
     if (!password.isNullOrBlank()) builder.password(password)
+    if (tls) {
+        builder.addQueryParameter("tls", "true")
+        if (sni.isNotBlank()) {
+            builder.addQueryParameter("sni", sni)
+        }
+    }
     if (!name.isNullOrBlank()) builder.encodedFragment(name.urlSafe())
-    if (udp) builder.addQueryParameter("udp", "true")
-    return builder.build().toString().replaceRange(0..3, "socks")
+    return builder.toLink("socks")
 
 }
 

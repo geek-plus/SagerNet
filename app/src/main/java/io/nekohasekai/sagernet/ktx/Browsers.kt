@@ -25,21 +25,22 @@ import android.content.Context
 import android.net.Uri
 import androidx.browser.customtabs.CustomTabColorSchemeParams
 import androidx.browser.customtabs.CustomTabsIntent
-import androidx.core.content.ContextCompat
 import io.nekohasekai.sagernet.R
 
-fun Context.launchCustomTab(uri: Uri) {
+fun Context.launchCustomTab(link: String) {
     CustomTabsIntent.Builder().apply {
         setColorScheme(CustomTabsIntent.COLOR_SCHEME_SYSTEM)
-        setColorSchemeParams(CustomTabsIntent.COLOR_SCHEME_LIGHT,
+        setColorSchemeParams(
+            CustomTabsIntent.COLOR_SCHEME_LIGHT,
             CustomTabColorSchemeParams.Builder().apply {
-                setToolbarColor(ContextCompat.getColor(this@launchCustomTab,
-                    R.color.light_color_primary))
-            }.build())
-        setColorSchemeParams(CustomTabsIntent.COLOR_SCHEME_DARK,
+                setToolbarColor(getColorAttr(R.attr.colorPrimary))
+            }.build()
+        )
+        setColorSchemeParams(
+            CustomTabsIntent.COLOR_SCHEME_DARK,
             CustomTabColorSchemeParams.Builder().apply {
-                setToolbarColor(ContextCompat.getColor(this@launchCustomTab,
-                    R.color.light_color_primary))
-            }.build())
-    }.build().launchUrl(this, uri)
+                setToolbarColor(getColorAttr(R.attr.colorPrimary))
+            }.build()
+        )
+    }.build().launchUrl(this, Uri.parse(link))
 }

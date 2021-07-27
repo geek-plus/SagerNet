@@ -21,27 +21,19 @@
 
 package io.nekohasekai.sagernet.fmt.shadowsocksr;
 
+import androidx.annotation.NonNull;
+
 import com.esotericsoftware.kryo.io.ByteBufferInput;
 import com.esotericsoftware.kryo.io.ByteBufferOutput;
 
 import org.jetbrains.annotations.NotNull;
 
+import cn.hutool.core.util.StrUtil;
 import io.nekohasekai.sagernet.fmt.AbstractBean;
 import io.nekohasekai.sagernet.fmt.KryoConverters;
+import io.nekohasekai.sagernet.fmt.brook.BrookBean;
 
 public class ShadowsocksRBean extends AbstractBean {
-
-    public static ShadowsocksRBean DEFAULT_BEAN = new ShadowsocksRBean() {{
-        name = "";
-        serverAddress = "127.0.0.1";
-        serverPort = 1080;
-        password = "";
-        protocol = "origin";
-        protocolParam = "";
-        obfs = "plain";
-        obfsParam = "";
-        method = "aes-256-gcm";
-    }};
 
     public String password;
     public String method;
@@ -49,6 +41,19 @@ public class ShadowsocksRBean extends AbstractBean {
     public String protocolParam;
     public String obfs;
     public String obfsParam;
+
+    @Override
+    public void initializeDefaultValues() {
+        super.initializeDefaultValues();
+
+        if (password == null) password = "";
+        if (StrUtil.isBlank(method)) method = "aes-256-cfb";
+        if (StrUtil.isBlank(protocol)) protocol = "origin";
+        if (protocolParam == null) protocolParam = "";
+        if (StrUtil.isBlank(obfs)) obfs = "plain";
+        if (obfsParam == null) obfsParam = "";
+
+    }
 
     @Override
     public void serialize(ByteBufferOutput output) {
@@ -80,4 +85,17 @@ public class ShadowsocksRBean extends AbstractBean {
     public ShadowsocksRBean clone() {
         return KryoConverters.deserialize(new ShadowsocksRBean(), KryoConverters.serialize(this));
     }
+
+    public static final Creator<ShadowsocksRBean> CREATOR = new CREATOR<ShadowsocksRBean>() {
+        @NonNull
+        @Override
+        public ShadowsocksRBean newInstance() {
+            return new ShadowsocksRBean();
+        }
+
+        @Override
+        public ShadowsocksRBean[] newArray(int size) {
+            return new ShadowsocksRBean[size];
+        }
+    };
 }

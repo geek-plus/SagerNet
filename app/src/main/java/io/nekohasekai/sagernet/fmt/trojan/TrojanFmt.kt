@@ -21,9 +21,19 @@
 
 package io.nekohasekai.sagernet.fmt.trojan
 
+import cn.hutool.json.JSONArray
+import cn.hutool.json.JSONObject
+import io.nekohasekai.sagernet.IPv6Mode
+import io.nekohasekai.sagernet.database.DataStore
+import io.nekohasekai.sagernet.fmt.LOCALHOST
+import io.nekohasekai.sagernet.ktx.isIpAddress
+import io.nekohasekai.sagernet.ktx.linkBuilder
+import io.nekohasekai.sagernet.ktx.toLink
 import io.nekohasekai.sagernet.ktx.urlSafe
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
+// WTF
+// https://github.com/trojan-gfw/igniter/issues/318
 fun parseTrojan(server: String): TrojanBean {
 
     val link = server.replace("trojan://", "https://").toHttpUrlOrNull()
@@ -35,11 +45,12 @@ fun parseTrojan(server: String): TrojanBean {
         password = link.username
 
         if (link.password.isNotBlank()) {
-            // https://github.com/trojan-gfw/igniter/issues/318
             password += ":" + link.password
         }
 
+        security = link.queryParameter("security") ?: "tls"
         sni = link.queryParameter("sni") ?: ""
+        alpn = link.queryParameter("alpn") ?: ""
         name = link.fragment ?: ""
     }
 
@@ -47,9 +58,78 @@ fun parseTrojan(server: String): TrojanBean {
 
 fun TrojanBean.toUri(): String {
 
-    val params = if (sni.isNotBlank()) "?sni=" + sni.urlSafe() else ""
-    val remark = if (name.isNotBlank()) "#" + name.urlSafe() else ""
+    val builder = linkBuilder().username(password).host(serverAddress).port(serverPort)
 
-    return "trojan://" + password.urlSafe() + "@" + serverAddress + ":" + serverPort + params + remark
+    if (sni.isNotBlank()) {
+        builder.addQueryParameter("sni", sni)
+    }
+    if (alpn.isNotBlank()) {
+        builder.addQueryParameter("alpn", alpn)
+    }
 
+    when (security) {
+        "tls" -> {
+        }
+    }
+
+    if (name.isNotBlank()) {
+        builder.encodedFragment(name.urlSafe())
+    }
+
+
+    return builder.toLink("trojan")
+
+}
+
+fun TrojanBean.buildTrojanConfig(port: Int): String {
+    return JSONObject().also { conf ->
+        conf["run_type"] = "client"
+        conf["local_addr"] = LOCALHOST
+        conf["local_port"] = port
+        conf["remote_addr"] = finalAddress
+        conf["remote_port"] = finalPort
+        conf["password"] = JSONArray().apply {
+            add(password)
+        }
+        conf["log_level"] = if (DataStore.enableLog) 0 else 2
+
+        conf["ssl"] = JSONObject().also {
+            if (allowInsecure) it["verify"] = false
+            if (sni.isBlank() && finalAddress == LOCALHOST && !serverAddress.isIpAddress()) {
+                sni = serverAddress
+            }
+            if (sni.isNotBlank()) it["sni"] = sni
+            if (alpn.isNotBlank()) it["alpn"] = JSONArray(alpn.split("\n"))
+        }
+    }.toStringPretty()
+}
+
+fun TrojanBean.buildTrojanGoConfig(port: Int, mux: Boolean): String {
+    return JSONObject().also { conf ->
+        conf["run_type"] = "client"
+        conf["local_addr"] = LOCALHOST
+        conf["local_port"] = port
+        conf["remote_addr"] = finalAddress
+        conf["remote_port"] = finalPort
+        conf["password"] = JSONArray().apply {
+            add(password)
+        }
+        conf["log_level"] = if (DataStore.enableLog) 0 else 2
+        if (mux && DataStore.enableMuxForAll) conf["mux"] = JSONObject().also {
+            it["enabled"] = true
+            it["concurrency"] = DataStore.muxConcurrency
+        }
+        conf["tcp"] = JSONObject().also {
+            it["prefer_ipv4"] = DataStore.ipv6Mode <= IPv6Mode.ENABLE
+        }
+
+        conf["ssl"] = JSONObject().also {
+            if (allowInsecure) it["verify"] = false
+            if (sni.isBlank() && finalAddress == LOCALHOST && !serverAddress.isIpAddress()) {
+                sni = serverAddress
+            }
+            if (sni.isNotBlank()) it["sni"] = sni
+            if (alpn.isNotBlank()) it["alpn"] = JSONArray(alpn.split("\n"))
+        }
+    }.toStringPretty()
 }

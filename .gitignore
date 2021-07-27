@@ -1,6 +1,5 @@
 *.iml
 .gradle
-/local.properties
 /.idea/caches
 /.idea/libraries
 /.idea/modules.xml
@@ -15,3 +14,5 @@ build/
 local.properties
 /app/libs/
 /app/src/main/assets/v2ray
+/service_account_credentials.json
+jniLibs/

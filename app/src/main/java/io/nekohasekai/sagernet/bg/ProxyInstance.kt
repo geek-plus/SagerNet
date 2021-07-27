@@ -21,231 +21,285 @@
 
 package io.nekohasekai.sagernet.bg
 
-import android.content.Context
-import android.os.Build
-import android.os.SystemClock
-import android.webkit.WebView
-import cn.hutool.json.JSONObject
-import com.github.shadowsocks.plugin.PluginConfiguration
-import com.github.shadowsocks.plugin.PluginManager
-import io.nekohasekai.sagernet.SagerNet
+import cn.hutool.core.util.NumberUtil
+import com.v2ray.core.app.observatory.command.GetOutboundStatusRequest
+import com.v2ray.core.app.observatory.command.ObservatoryServiceGrpcKt
+import com.v2ray.core.app.stats.command.GetStatsRequest
+import com.v2ray.core.app.stats.command.StatsServiceGrpcKt
+import io.grpc.ManagedChannel
+import io.grpc.StatusException
 import io.nekohasekai.sagernet.database.DataStore
 import io.nekohasekai.sagernet.database.ProxyEntity
 import io.nekohasekai.sagernet.database.SagerDatabase
-import io.nekohasekai.sagernet.fmt.gson.gson
-import io.nekohasekai.sagernet.fmt.shadowsocks.ShadowsocksBean
-import io.nekohasekai.sagernet.fmt.shadowsocksr.ShadowsocksRBean
-import io.nekohasekai.sagernet.fmt.v2ray.AbstractV2RayBean
-import io.nekohasekai.sagernet.fmt.v2ray.V2RayConfig
-import io.nekohasekai.sagernet.fmt.v2ray.buildV2RayConfig
-import io.nekohasekai.sagernet.ktx.Logs
+import io.nekohasekai.sagernet.ktx.*
 import io.nekohasekai.sagernet.utils.DirectBoot
-import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.*
 import libv2ray.Libv2ray
-import libv2ray.V2RayPoint
-import libv2ray.V2RayVPNServiceSupportsSet
-import java.io.File
 import java.io.IOException
-import java.util.*
 
-class ProxyInstance(val profile: ProxyEntity) {
+class ProxyInstance(profile: ProxyEntity, val service: BaseService.Interface) : V2RayInstance(profile) {
 
-    lateinit var v2rayPoint: V2RayPoint
-    lateinit var config: V2RayConfig
-    lateinit var base: BaseService.Interface
-    lateinit var wsForwarder: WebView
+    lateinit var managedChannel: ManagedChannel
+    val statsService by lazy { StatsServiceGrpcKt.StatsServiceCoroutineStub(managedChannel) }
+    val observatoryService by lazy {
+        ObservatoryServiceGrpcKt.ObservatoryServiceCoroutineStub(managedChannel)
+    }
+    lateinit var observatoryJob: Job
 
-    fun init(service: BaseService.Interface) {
-        base = service
-        v2rayPoint = Libv2ray.newV2RayPoint(SagerSupportClass(if (service is VpnService)
-            service else null), false)
-        if (profile.useExternalShadowsocks() || profile.type == 2) {
-            v2rayPoint.domainName = "127.0.0.1:${DataStore.socksPort + 10}"
+    override fun initInstance() {
+        if (service is VpnService) {
+            v2rayPoint = Libv2ray.newV2RayPoint(SagerSupportSet(service), false)
         } else {
-            v2rayPoint.domainName =
-                profile.requireBean().serverAddress + ":" + profile.requireBean().serverPort
-        }
-        config = buildV2RayConfig(profile)
-        v2rayPoint.configureFileContent = gson.toJson(config).also {
-            Logs.d(it)
+            super.initInstance()
         }
     }
 
-    var cacheFiles = LinkedList<File>()
+    override fun init() {
+        super.init()
 
-    fun start() {
-        val bean = profile.requireBean()
+        Logs.d(config.config)
+        pluginConfigs.forEach { (_, plugin) ->
+            val (_, content) = plugin
+            Logs.d(content)
+        }
+    }
 
-        if (profile.useExternalShadowsocks()) {
-            bean as ShadowsocksBean
-            val port = DataStore.socksPort + 10
+    override fun launch() {
+        super.launch()
 
-            val proxyConfig = JSONObject().also {
-                it["server"] = bean.serverAddress
-                it["server_port"] = bean.serverPort
-                it["method"] = bean.method
-                it["password"] = bean.password
-                it["local_address"] = "127.0.0.1"
-                it["local_port"] = port
-                it["local_udp_address"] = "127.0.0.1"
-                it["local_udp_port"] = port
-                it["mode"] = "tcp_and_udp"
+        if (config.enableApi) {
+            managedChannel = createChannel()
+        }
 
-                if (DataStore.ipv6Route && DataStore.preferIpv6) {
-                    it["ipv6_first"] = true
+        if (config.observatoryTags.isNotEmpty()) {
+            observatoryJob = runOnDefaultDispatcher {
+                val interval = 10000L
+                while (isActive) {
+                    try {
+                        val statusList =
+                            observatoryService.getOutboundStatus(GetOutboundStatusRequest.getDefaultInstance()).status.statusList
+                        if (!isActive) break
+                        statusList.forEach { status ->
+                            val profileId = status.outboundTag.substringAfter("global-")
+                            if (NumberUtil.isLong(profileId)) {
+                                val profile = SagerDatabase.proxyDao.getById(profileId.toLong())
+                                if (profile != null) {
+                                    val newStatus = if (status.alive) 1 else 3
+                                    val newDelay = status.delay.toInt()
+                                    val newErrorReason = status.lastErrorReason
+
+                                    if (profile.status != newStatus || profile.ping != newDelay || profile.error != newErrorReason) {
+                                        profile.status = newStatus
+                                        profile.ping = newDelay
+                                        profile.error = newErrorReason
+                                        SagerDatabase.proxyDao.updateProxy(profile)
+                                        onMainDispatcher {
+                                            service.data.binder.broadcast {
+                                                it.profilePersisted(profile.id)
+                                            }
+                                        }
+                                        Logs.d("Send result for #$profileId ${profile.displayName()}")
+                                    }
+                                } else {
+                                    Logs.d("Profile with id #$profileId not found")
+                                }
+                            } else {
+                                Logs.d("Persist skipped on outbound ${status.outboundTag}")
+                            }
+                        }
+                    } catch (e: StatusException) {
+                        if (closed) break
+                        Logs.w(e)
+                    }
+                    delay(interval)
                 }
             }
-
-            if (bean.plugin.isNotBlank()) {
-                val pluginConfiguration = PluginConfiguration(bean.plugin ?: "")
-                PluginManager.init(pluginConfiguration)?.let { (path, opts, isV2) ->
-                    proxyConfig["plugin"] = path
-                    proxyConfig["plugin_opts"] = opts.toString()
-                }
-            }
-
-            Logs.d(proxyConfig.toStringPretty())
-
-            val context =
-                if (Build.VERSION.SDK_INT < 24 || SagerNet.user.isUserUnlocked)
-                    SagerNet.application else SagerNet.deviceStorage
-            val configFile =
-                File(context.noBackupFilesDir,
-                    "shadowsocks_" + SystemClock.elapsedRealtime() + ".json")
-            configFile.writeText(proxyConfig.toString())
-            cacheFiles.add(configFile)
-
-            val commands = mutableListOf(
-                File(SagerNet.application.applicationInfo.nativeLibraryDir,
-                    Executable.SS_LOCAL).absolutePath,
-                "-c", configFile.absolutePath
-            )
-
-            base.data.processes!!.start(commands)
-        } else if (profile.type == 2) {
-            bean as ShadowsocksRBean
-            val port = DataStore.socksPort + 10
-
-            val proxyConfig = JSONObject().also {
-
-                it["server"] = bean.serverAddress
-                it["server_port"] = bean.serverPort
-                it["method"] = bean.method
-                it["password"] = bean.password
-                it["protocol"] = bean.protocol
-                it["protocol_param"] = bean.protocolParam
-                it["obfs"] = bean.obfs
-                it["obfs_param"] = bean.obfsParam
-                it["ipv6"] = DataStore.ipv6Route
-            }
-
-            Logs.d(proxyConfig.toStringPretty())
-
-            val context =
-                if (Build.VERSION.SDK_INT < 24 || SagerNet.user.isUserUnlocked)
-                    SagerNet.application else SagerNet.deviceStorage
-
-            val configFile =
-                File(context.noBackupFilesDir,
-                    "shadowsocksr_" + SystemClock.elapsedRealtime() + ".json")
-            configFile.writeText(proxyConfig.toString())
-            cacheFiles.add(configFile)
-
-            val commands = mutableListOf(
-                File(SagerNet.application.applicationInfo.nativeLibraryDir,
-                    Executable.SSR_LOCAL).absolutePath,
-                "-b", "127.0.0.1",
-                "-c", configFile.absolutePath,
-                "-l", "$port"
-            )
-
-            base.data.processes!!.start(commands)
-        } else if (bean is AbstractV2RayBean) {
-            if (bean.network == "ws" && DataStore.wsBrowserForwarding) {
-                wsForwarder = WebView(base as Context)
-                wsForwarder.loadUrl("http://127.0.0.1:" + DataStore.socksPort + 11)
-            }
-        }
-
-        v2rayPoint.runLoop(DataStore.preferIpv6)
-    }
-
-    fun stop() {
-        v2rayPoint.stopLoop()
-
-        if (::wsForwarder.isInitialized) {
-            wsForwarder.clearView()
-            wsForwarder.destroy()
         }
     }
 
-    fun printStats() {
-        val tags = config.outbounds.map { outbound -> outbound.tag.takeIf { !it.isNullOrBlank() } }
-        for (tag in tags) {
-            val uplink = v2rayPoint.queryStats(tag, "uplink")
-            val downlink = v2rayPoint.queryStats(tag, "downlink")
-            println("$tag >> uplink $uplink / downlink $downlink")
+    override fun destroy(scope: CoroutineScope) {
+        persistStats()
+        super.destroy(scope)
+
+        if (::observatoryJob.isInitialized) {
+            observatoryJob.cancel()
+        }
+
+        if (::managedChannel.isInitialized) {
+            managedChannel.shutdownNow()
         }
     }
 
-    fun stats(direct: String): Long {
-        if (!::v2rayPoint.isInitialized) {
+    // ------------- stats -------------
+
+    private suspend fun queryStats(tag: String, direct: String): Long {
+        if (USE_STATS_SERVICE) {
+            try {
+                return queryStatsGrpc(tag, direct)
+            } catch (e: StatusException) {
+                if (closed) return 0L
+                Logs.w(e)
+                if (isExpert) return 0L
+            }
+        }
+        return v2rayPoint.queryStats(tag, direct)
+    }
+
+    private suspend fun queryStatsGrpc(tag: String, direct: String): Long {
+        if (!::managedChannel.isInitialized) {
             return 0L
         }
-        return v2rayPoint.queryStats("out", direct)
+        try {
+            return statsService.getStats(GetStatsRequest.newBuilder()
+                .setName("outbound>>>$tag>>>traffic>>>$direct")
+                .setReset(true)
+                .build()).stat.value
+        } catch (e: StatusException) {
+            if (e.status.description?.contains("not found") == true) {
+                return 0L
+            }
+            throw e
+        }
     }
 
-    val uplink
-        get() = stats("uplink").also {
-            uplinkTotal += it
+    private val currentTags by lazy {
+        mapOf(* config.outboundTagsCurrent.map {
+            it to config.outboundTagsAll[it] as ProxyEntity?
+        }.toTypedArray())
+    }
+
+    private val statsTags by lazy {
+        mapOf(*  config.outboundTags.toMutableList().apply {
+            removeAll(config.outboundTagsCurrent)
+        }.map {
+            it to config.outboundTagsAll[it] as ProxyEntity?
+        }.toTypedArray())
+    }
+
+    private val interTags by lazy {
+        config.outboundTagsAll.filterKeys { !config.outboundTags.contains(it) }
+    }
+
+    class OutboundStats(val proxyEntity: ProxyEntity, var uplinkTotal: Long = 0L, var downlinkTotal: Long = 0L)
+
+    private val statsOutbounds = hashMapOf<Long, OutboundStats>()
+    private fun registerStats(proxyEntity: ProxyEntity, uplink: Long? = null, downlink: Long? = null) {
+        if (proxyEntity.id == outboundStats.proxyEntity.id) return
+        val stats = statsOutbounds.getOrPut(proxyEntity.id) {
+            OutboundStats(proxyEntity)
+        }
+        if (uplink != null) {
+            stats.uplinkTotal += uplink
+        }
+        if (downlink != null) {
+            stats.downlinkTotal += downlink
+        }
+    }
+
+    var uplinkProxy = 0L
+    var downlinkProxy = 0L
+    var uplinkTotalDirect = 0L
+    var downlinkTotalDirect = 0L
+
+    private val outboundStats = OutboundStats(profile)
+    suspend fun outboundStats(): Pair<OutboundStats, HashMap<Long, OutboundStats>> {
+        if (!isInitialized()) return outboundStats to statsOutbounds
+        uplinkProxy = 0L
+        downlinkProxy = 0L
+
+        val currentUpLink = currentTags.map { (tag, profile) ->
+            queryStats(tag, "uplink").apply { profile?.also { registerStats(it, uplink = this) } }
+        }
+        val currentDownLink = currentTags.map { (tag, profile) ->
+            queryStats(tag, "downlink").apply {
+                profile?.also {
+                    registerStats(it, downlink = this)
+                }
+            }
+        }
+        uplinkProxy += currentUpLink.fold(0L) { acc, l -> acc + l }
+        downlinkProxy += currentDownLink.fold(0L) { acc, l -> acc + l }
+
+        outboundStats.uplinkTotal += uplinkProxy
+        outboundStats.downlinkTotal += downlinkProxy
+
+        if (statsTags.isNotEmpty()) {
+            uplinkProxy += statsTags.map { (tag, profile) ->
+                queryStats(tag, "uplink").apply {
+                    profile?.also {
+                        registerStats(it, uplink = this)
+                    }
+                }
+            }.fold(0L) { acc, l -> acc + l }
+            downlinkProxy += statsTags.map { (tag, profile) ->
+                queryStats(tag, "downlink").apply {
+                    profile?.also {
+                        registerStats(it, downlink = this)
+                    }
+                }
+            }.fold(0L) { acc, l -> acc + l }
         }
 
-    val downlink
-        get() = stats("downlink").also {
-            downlinkTotal += it
+        if (interTags.isNotEmpty()) {
+            interTags.map { (tag, profile) ->
+                queryStats(tag, "uplink").also { registerStats(profile, uplink = it) }
+            }
+            interTags.map { (tag, profile) ->
+                queryStats(tag, "downlink").also {
+                    registerStats(profile, downlink = it)
+                }
+            }
         }
 
-    var uplinkTotal = 0L
-    var downlinkTotal = 0L
+        return outboundStats to statsOutbounds
+    }
+
+    suspend fun directStats(direct: String): Long {
+        if (!isInitialized()) return 0L
+        return queryStats(config.directTag, direct)
+    }
+
+    suspend fun uplinkDirect() = directStats("uplink").also {
+        uplinkTotalDirect += it
+    }
+
+    suspend fun downlinkDirect() = directStats("downlink").also {
+        downlinkTotalDirect += it
+    }
 
     fun persistStats() {
-        try {
-            uplink
-            downlink
-            profile.tx += uplinkTotal
-            profile.rx += downlinkTotal
-            SagerDatabase.proxyDao.updateProxy(profile)
-        } catch (e: IOException) {
-            if (!DataStore.directBootAware) throw e // we should only reach here because we're in direct boot
-            val profile = DirectBoot.getDeviceProfile()!!
-            profile.tx += uplinkTotal
-            profile.rx += downlinkTotal
-            profile.dirty = true
-            DirectBoot.update(profile)
-            DirectBoot.listenForUnlock()
+        runBlocking {
+            try {
+                outboundStats()
+
+                val toUpdate = mutableListOf<ProxyEntity>()
+                if (outboundStats.uplinkTotal + outboundStats.downlinkTotal != 0L) {
+                    profile.tx += outboundStats.uplinkTotal
+                    profile.rx += outboundStats.downlinkTotal
+                    toUpdate.add(profile)
+                }
+
+                statsOutbounds.values.forEach {
+                    if (it.uplinkTotal + it.downlinkTotal != 0L) {
+                        it.proxyEntity.tx += it.uplinkTotal
+                        it.proxyEntity.rx += it.downlinkTotal
+                        toUpdate.add(it.proxyEntity)
+                    }
+                }
+
+                if (toUpdate.isNotEmpty()) {
+                    SagerDatabase.proxyDao.updateProxy(toUpdate)
+                }
+            } catch (e: IOException) {
+                if (!DataStore.directBootAware) throw e // we should only reach here because we're in direct boot
+                val profile = DirectBoot.getDeviceProfile()!!
+                profile.tx += outboundStats.uplinkTotal
+                profile.rx += outboundStats.downlinkTotal
+                profile.dirty = true
+                DirectBoot.update(profile)
+                DirectBoot.listenForUnlock()
+            }
         }
     }
-
-    fun shutdown(coroutineScope: CoroutineScope) {
-        persistStats()
-        cacheFiles.removeAll { it.delete(); true }
-    }
-
-    private class SagerSupportClass(val service: VpnService?) : V2RayVPNServiceSupportsSet {
-
-        override fun onEmitStatus(p0: Long, status: String): Long {
-            Logs.i("onEmitStatus $status")
-            return 0L
-        }
-
-        override fun protect(l: Long): Boolean {
-            return (service ?: return true).protect(l.toInt())
-        }
-
-        override fun shutdown(): Long {
-            return 0
-        }
-    }
-
 
 }

@@ -21,6 +21,8 @@
 
 package io.nekohasekai.sagernet.fmt.trojan;
 
+import androidx.annotation.NonNull;
+
 import com.esotericsoftware.kryo.io.ByteBufferInput;
 import com.esotericsoftware.kryo.io.ByteBufferOutput;
 
@@ -29,38 +31,41 @@ import org.jetbrains.annotations.NotNull;
 import cn.hutool.core.util.StrUtil;
 import io.nekohasekai.sagernet.fmt.AbstractBean;
 import io.nekohasekai.sagernet.fmt.KryoConverters;
+import io.nekohasekai.sagernet.fmt.brook.BrookBean;
 
 public class TrojanBean extends AbstractBean {
 
-    public static TrojanBean DEFAULT_BEAN = new TrojanBean() {{
-        name = "";
-        serverAddress = "127.0.0.1";
-        serverPort = 1080;
-        password = "";
-        sni = "";
-    }};
-
     public String password;
-    public String sni;
 
-    public void initDefaultValues() {
-        if (StrUtil.isNotBlank(serverAddress)) {
-            serverAddress = "";
-        }
-        if (StrUtil.isNotBlank(password)) {
-            password = "";
-        }
-        if (StrUtil.isNotBlank(sni)) {
-            sni = "";
-        }
+    public String security;
+    public String sni;
+    public String alpn;
+
+    // --------------------------------------- //
+
+    public Boolean allowInsecure;
+
+    @Override
+    public void initializeDefaultValues() {
+        super.initializeDefaultValues();
+
+        if (password == null) password = "";
+        if (StrUtil.isBlank(security)) security = "tls";
+        if (sni == null) sni = "";
+        if (alpn == null) alpn = "";
+        if (allowInsecure == null) allowInsecure = false;
+
     }
 
     @Override
     public void serialize(ByteBufferOutput output) {
-        output.writeInt(0);
+        output.writeInt(1);
         super.serialize(output);
         output.writeString(password);
+        output.writeString(security);
         output.writeString(sni);
+        output.writeString(alpn);
+        output.writeBoolean(allowInsecure);
     }
 
     @Override
@@ -68,12 +73,37 @@ public class TrojanBean extends AbstractBean {
         int version = input.readInt();
         super.deserialize(input);
         password = input.readString();
+        security = input.readString();
         sni = input.readString();
+        alpn = input.readString();
+        if (version >= 1) {
+            allowInsecure = input.readBoolean();
+        }
+    }
+
+    @Override
+    public void applyFeatureSettings(AbstractBean other) {
+        if (!(other instanceof TrojanBean)) return;
+        TrojanBean bean = ((TrojanBean) other);
+        bean.allowInsecure = allowInsecure;
     }
 
     @NotNull
     @Override
-    public AbstractBean clone() {
+    public TrojanBean clone() {
         return KryoConverters.deserialize(new TrojanBean(), KryoConverters.serialize(this));
     }
+
+    public static final Creator<TrojanBean> CREATOR = new CREATOR<TrojanBean>() {
+        @NonNull
+        @Override
+        public TrojanBean newInstance() {
+            return new TrojanBean();
+        }
+
+        @Override
+        public TrojanBean[] newArray(int size) {
+            return new TrojanBean[size];
+        }
+    };
 }

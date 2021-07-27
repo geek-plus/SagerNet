@@ -21,6 +21,8 @@
 
 package io.nekohasekai.sagernet.fmt.v2ray;
 
+import androidx.annotation.NonNull;
+
 import com.esotericsoftware.kryo.io.ByteBufferInput;
 import com.esotericsoftware.kryo.io.ByteBufferOutput;
 
@@ -29,38 +31,28 @@ import org.jetbrains.annotations.NotNull;
 import cn.hutool.core.util.StrUtil;
 import io.nekohasekai.sagernet.fmt.KryoConverters;
 
-public class VMessBean extends AbstractV2RayBean {
+public class VMessBean extends StandardV2RayBean {
 
-    public static VMessBean DEFAULT_BEAN = new VMessBean() {{
-        serverPort = 1080;
-        initDefaultValues();
-    }};
-
-    public String security;
     public int alterId;
 
     @Override
-    public void initDefaultValues() {
-        super.initDefaultValues();
+    public void initializeDefaultValues() {
+        super.initializeDefaultValues();
 
-        if (StrUtil.isBlank(security)) {
-            security = "auto";
+        if (StrUtil.isBlank(encryption)) {
+            encryption = "auto";
         }
     }
 
     @Override
     public void serialize(ByteBufferOutput output) {
         super.serialize(output);
-
-        output.writeString(security);
         output.writeInt(alterId);
     }
 
     @Override
     public void deserialize(ByteBufferInput input) {
         super.deserialize(input);
-
-        security = input.readString();
         alterId = input.readInt();
     }
 
@@ -69,4 +61,17 @@ public class VMessBean extends AbstractV2RayBean {
     public VMessBean clone() {
         return KryoConverters.deserialize(new VMessBean(), KryoConverters.serialize(this));
     }
+
+    public static final Creator<VMessBean> CREATOR = new CREATOR<VMessBean>() {
+        @NonNull
+        @Override
+        public VMessBean newInstance() {
+            return new VMessBean();
+        }
+
+        @Override
+        public VMessBean[] newArray(int size) {
+            return new VMessBean[size];
+        }
+    };
 }

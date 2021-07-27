@@ -26,14 +26,11 @@ import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ViewModel
 import io.nekohasekai.sagernet.R
 import io.nekohasekai.sagernet.database.DataStore
-import io.nekohasekai.sagernet.ktx.app
-import io.nekohasekai.sagernet.ktx.runOnDefaultDispatcher
-import io.nekohasekai.sagernet.ktx.runOnMainDispatcher
+import io.nekohasekai.sagernet.ktx.*
+import kotlinx.coroutines.delay
 import okhttp3.*
-import okhttp3.internal.headersContentLength
+import okhttp3.internal.closeQuietly
 import java.io.IOException
-import java.net.InetSocketAddress
-import java.net.Proxy
 
 /**
  * Based on: https://android.googlesource.com/platform/frameworks/base/+/b19a838/services/core/java/com/android/server/connectivity/NetworkMonitor.java#1071
@@ -53,7 +50,12 @@ class HttpsTest : ViewModel() {
         }
 
         class Success(private val elapsed: Long) : Status() {
-            override val status get() = app.getString(R.string.connection_test_available, elapsed)
+            override val status
+                get() = app.getString(if (DataStore.connectionTestURL.startsWith("https://")) {
+                    R.string.connection_test_available
+                } else {
+                    R.string.connection_test_available_http
+                }, elapsed)
         }
 
         sealed class Error : Status() {
@@ -80,49 +82,61 @@ class HttpsTest : ViewModel() {
                 override val error get() = app.getString(R.string.connection_test_error, e.message)
             }
         }
+
     }
 
     private var running: Call? = null
     val status = MutableLiveData<Status>(Status.Idle)
+    val okHttpClient by lazy { OkHttpClient.Builder().proxy(requireProxy()).build() }
 
     fun testConnection() {
         cancelTest()
         status.value = Status.Testing
 
         runOnDefaultDispatcher {
-            val okhttp = OkHttpClient.Builder()
-                .proxy(Proxy(Proxy.Type.SOCKS, InetSocketAddress("127.0.0.1", DataStore.socksPort)))
-                .build()
             val start = SystemClock.elapsedRealtime()
-            running = okhttp.newCall(
+            running = okHttpClient.newCall(
                 Request.Builder()
-                    .url("https://cp.cloudflare.com")
+                    .url(DataStore.connectionTestURL)
                     .addHeader("Connection", "close")
+                    .addHeader("User-Agent", "curl/7.74.0")
                     .build()
             ).apply {
-                enqueue(object : Callback {
-                    override fun onFailure(call: Call, e: IOException) {
-                        runOnMainDispatcher {
+                val response = try {
+                    execute()
+                } catch (e: IOException) {
+                    if (e.readableMessage.contains("failed to connect to /127.0.0.1") && e.readableMessage.contains("ECONNREFUSED")) {
+                        delay(1000L)
+                        onMainDispatcher {
+                            testConnection()
+                        }
+                        return@runOnDefaultDispatcher
+                    }
+                    if (!isCanceled()) {
+                        onMainDispatcher {
                             status.value = Status.Error.IOFailure(e)
                             running = null
                         }
                     }
+                    return@runOnDefaultDispatcher
+                }
 
-                    override fun onResponse(call: Call, response: Response) {
-                        val code = response.code
-                        val elapsed = SystemClock.elapsedRealtime() - start
-                        runOnMainDispatcher {
-                            status.value =
-                                if (code == 204 || code == 200 && response.headersContentLength() == 0L) {
-                                    Status.Success(elapsed)
-                                } else {
-                                    Status.Error.UnexpectedResponseCode(code)
-                                }
-                            running = null
+                if (isCanceled()) {
+                    return@runOnDefaultDispatcher
+                }
+
+                val code = response.code
+                val elapsed = SystemClock.elapsedRealtime() - start
+                response.closeQuietly()
+                runOnMainDispatcher {
+                    status.value =
+                        if (code == 204 || code == 200) {
+                            Status.Success(elapsed)
+                        } else {
+                            Status.Error.UnexpectedResponseCode(code)
                         }
-
-                    }
-                })
+                    running = null
+                }
             }
         }
 

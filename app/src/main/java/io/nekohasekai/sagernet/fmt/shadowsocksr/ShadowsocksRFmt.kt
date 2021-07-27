@@ -22,12 +22,17 @@
 package io.nekohasekai.sagernet.fmt.shadowsocksr
 
 import cn.hutool.core.codec.Base64
+import cn.hutool.json.JSONObject
+import io.nekohasekai.sagernet.IPv6Mode
+import io.nekohasekai.sagernet.database.DataStore
+import io.nekohasekai.sagernet.ktx.applyDefaultValues
+import io.nekohasekai.sagernet.ktx.decodeBase64UrlSafe
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import java.util.*
 
 fun parseShadowsocksR(url: String): ShadowsocksRBean {
 
-    val params = Base64.decodeStr(url.substringAfter("ssr://")).split(":")
+    val params = url.substringAfter("ssr://").decodeBase64UrlSafe().split(":")
 
     val bean = ShadowsocksRBean().apply {
         serverAddress = params[0]
@@ -35,21 +40,21 @@ fun parseShadowsocksR(url: String): ShadowsocksRBean {
         protocol = params[2]
         method = params[3]
         obfs = params[4]
-        password = Base64.decodeStr(params[5].substringBefore("/"))
+        password = params[5].substringBefore("/").decodeBase64UrlSafe()
     }
 
     val httpUrl = ("https://localhost" + params[5].substringAfter("/")).toHttpUrl()
 
     runCatching {
-        bean.obfsParam = Base64.decodeStr(httpUrl.queryParameter("obfsparam")!!)
+        bean.obfsParam = httpUrl.queryParameter("obfsparam")!!.decodeBase64UrlSafe()
     }
     runCatching {
-        bean.protocolParam = Base64.decodeStr(httpUrl.queryParameter("protoparam")!!)
+        bean.protocolParam = httpUrl.queryParameter("protoparam")!!.decodeBase64UrlSafe()
     }
 
     val remarks = httpUrl.queryParameter("remarks")
     if (!remarks.isNullOrBlank()) {
-        bean.name = Base64.decodeStr(remarks)
+        bean.name = remarks.decodeBase64UrlSafe()
     }
 
     return bean
@@ -58,10 +63,41 @@ fun parseShadowsocksR(url: String): ShadowsocksRBean {
 
 fun ShadowsocksRBean.toUri(): String {
 
-    return "ssr://" + Base64.encodeUrlSafe("%s:%d:%s:%s:%s:%s/?obfsparam=%s&protoparam=%s&remarks=%s".format(
-        Locale.ENGLISH, serverAddress, serverPort, protocol, method, obfs,
-        Base64.encodeUrlSafe("%s".format(Locale.ENGLISH, password)),
-        Base64.encodeUrlSafe("%s".format(Locale.ENGLISH, obfsParam)),
-        Base64.encodeUrlSafe("%s".format(Locale.ENGLISH, protocolParam)),
-        Base64.encodeUrlSafe("%s".format(Locale.ENGLISH, name ?: ""))))
+    return "ssr://" + Base64.encodeUrlSafe(
+        "%s:%d:%s:%s:%s:%s/?obfsparam=%s&protoparam=%s&remarks=%s".format(
+            Locale.ENGLISH, serverAddress, serverPort, protocol, method, obfs, Base64.encodeUrlSafe("%s".format(Locale.ENGLISH, password)), Base64.encodeUrlSafe("%s".format(Locale.ENGLISH, obfsParam)), Base64.encodeUrlSafe("%s".format(Locale.ENGLISH, protocolParam)), Base64.encodeUrlSafe(
+                "%s".format(
+                    Locale.ENGLISH, name ?: ""
+                )
+            )
+        )
+    )
+}
+
+fun ShadowsocksRBean.buildShadowsocksRConfig(): String {
+    return JSONObject().also {
+        it["server"] = finalAddress
+        it["server_port"] = finalPort
+        it["method"] = method
+        it["password"] = password
+        it["protocol"] = protocol
+        it["protocol_param"] = protocolParam
+        it["obfs"] = obfs
+        it["obfs_param"] = obfsParam
+        it["ipv6"] = DataStore.ipv6Mode >= IPv6Mode.ENABLE
+    }.toStringPretty()
+}
+
+fun JSONObject.parseShadowsocksR(): ShadowsocksRBean {
+    return ShadowsocksRBean().applyDefaultValues().apply {
+        serverAddress = getStr("server", serverAddress)
+        serverPort = getInt("server_port", serverPort)
+        method = getStr("method", method)
+        password = getStr("password", password)
+        protocol = getStr("protocol", protocol)
+        protocolParam = getStr("protocol_param", protocolParam)
+        obfs = getStr("obfs", obfs)
+        obfsParam = getStr("obfs_param", obfsParam)
+        name = getStr("remarks", name)
+    }
 }

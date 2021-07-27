@@ -12,16 +12,18 @@
                 android:title="@string/add_profile_methods_scan_qr_code" />
             <item
                 android:id="@+id/action_import_clipboard"
-                android:alphabeticShortcut="v"
                 android:title="@string/action_import" />
             <item
-                android:id="@+id/action_manual_settings"
-                android:alphabeticShortcut="n"
-                android:title="@string/add_profile_methods_manual_settings">
+                android:id="@+id/action_import_file"
+                android:title="@string/action_import_file" />
+            <item android:title="@string/add_profile_methods_manual_settings">
                 <menu>
                     <item
                         android:id="@+id/action_new_socks"
                         android:title="@string/action_socks" />
+                    <item
+                        android:id="@+id/action_new_http"
+                        android:title="@string/action_http" />
                     <item
                         android:id="@+id/action_new_ss"
                         android:title="@string/action_shadowsocks" />
@@ -37,9 +39,72 @@
                     <item
                         android:id="@+id/action_new_trojan"
                         android:title="@string/action_trojan" />
+                    <item
+                        android:id="@+id/action_new_trojan_go"
+                        android:title="@string/action_trojan_go" />
+                    <item
+                        android:id="@+id/action_new_naive"
+                        android:title="@string/action_naive" />
+                    <item
+                        android:id="@+id/action_new_ping_tunnel"
+                        android:title="@string/action_ping_tunnel" />
+                    <item
+                        android:id="@+id/action_new_relay_baton"
+                        android:title="@string/action_relay_baton" />
+                    <item
+                        android:id="@+id/action_new_brook"
+                        android:title="@string/action_brook" />
+                    <item
+                        android:id="@+id/action_new_config"
+                        android:title="@string/custom_config" />
+                    <item
+                        android:id="@+id/action_new_chain"
+                        android:title="@string/proxy_chain" />
+                    <item
+                        android:id="@+id/action_new_balancer"
+                        android:title="@string/balancer" />
                 </menu>
             </item>
-
         </menu>
     </item>
+    <item
+        android:id="@+id/action_clear_traffic_statistics"
+        android:title="@string/clear_traffic_statistics" />
+    <item
+        android:id="@+id/action_connection_test"
+        android:title="@string/connection_test">
+        <menu>
+            <item
+                android:id="@+id/action_connection_icmp_ping"
+                android:title="@string/connection_test_icmp_ping" />
+            <item
+                android:id="@+id/action_connection_tcp_ping"
+                android:title="@string/connection_test_tcp_ping" />
+            <item
+                android:id="@+id/action_connection_url_test"
+                android:title="@string/connection_test_url_test" />
+            <item
+                android:id="@+id/action_connection_url_reuse"
+                android:title="@string/connection_test_url_test_reuse_mode" />
+            <item
+                android:id="@+id/action_connection_reorder"
+                android:title="@string/connection_test_reorder" />
+            <item
+                android:id="@+id/action_connection_test_clear_results"
+                android:title="@string/connection_test_clear_results" />
+        </menu>
+    </item>
+    <item
+        android:id="@+id/action_group_filter"
+        android:title="@string/group_filter">
+        <menu>
+            <item
+                android:id="@+id/action_filter_groups"
+                android:title="@string/group_filter_groups" />
+            <item
+                android:id="@+id/action_filter_tags"
+                android:title="@string/group_filter_tags" />
+        </menu>
+    </item>
+
 </menu>

@@ -21,30 +21,32 @@
 
 package io.nekohasekai.sagernet.fmt.socks;
 
+import androidx.annotation.NonNull;
+
 import com.esotericsoftware.kryo.io.ByteBufferInput;
 import com.esotericsoftware.kryo.io.ByteBufferOutput;
 
 import org.jetbrains.annotations.NotNull;
 
-import java.util.Objects;
-
 import io.nekohasekai.sagernet.fmt.AbstractBean;
 import io.nekohasekai.sagernet.fmt.KryoConverters;
+import io.nekohasekai.sagernet.fmt.brook.BrookBean;
 
 public class SOCKSBean extends AbstractBean {
 
-    public static SOCKSBean DEFAULT_BEAN = new SOCKSBean() {{
-        name = "";
-        serverAddress = "127.0.0.1";
-        serverPort = 1080;
-        username = "";
-        password = "";
-        udp = false;
-    }};
-
     public String username;
     public String password;
-    public boolean udp;
+    public boolean tls;
+    public String sni;
+
+    @Override
+    public void initializeDefaultValues() {
+        super.initializeDefaultValues();
+
+        if (username == null) username = "";
+        if (password == null) password = "";
+        if (sni == null) sni = "";
+    }
 
     @Override
     public void serialize(ByteBufferOutput output) {
@@ -52,7 +54,8 @@ public class SOCKSBean extends AbstractBean {
         super.serialize(output);
         output.writeString(username);
         output.writeString(password);
-        output.writeBoolean(udp);
+        output.writeBoolean(tls);
+        output.writeString(sni);
     }
 
     @Override
@@ -61,7 +64,8 @@ public class SOCKSBean extends AbstractBean {
         super.deserialize(input);
         username = input.readString();
         password = input.readString();
-        udp = input.readBoolean();
+        tls = input.readBoolean();
+        sni = input.readString();
     }
 
     @NotNull
@@ -69,5 +73,18 @@ public class SOCKSBean extends AbstractBean {
     public SOCKSBean clone() {
         return KryoConverters.deserialize(new SOCKSBean(), KryoConverters.serialize(this));
     }
+
+    public static final Creator<SOCKSBean> CREATOR = new CREATOR<SOCKSBean>() {
+        @NonNull
+        @Override
+        public SOCKSBean newInstance() {
+            return new SOCKSBean();
+        }
+
+        @Override
+        public SOCKSBean[] newArray(int size) {
+            return new SOCKSBean[size];
+        }
+    };
 
 }

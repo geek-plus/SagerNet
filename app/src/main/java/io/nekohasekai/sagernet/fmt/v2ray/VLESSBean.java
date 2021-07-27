@@ -21,42 +21,23 @@
 
 package io.nekohasekai.sagernet.fmt.v2ray;
 
-import com.esotericsoftware.kryo.io.ByteBufferInput;
-import com.esotericsoftware.kryo.io.ByteBufferOutput;
+import androidx.annotation.NonNull;
 
 import org.jetbrains.annotations.NotNull;
 
 import cn.hutool.core.util.StrUtil;
 import io.nekohasekai.sagernet.fmt.KryoConverters;
 
-public class VLESSBean extends AbstractV2RayBean {
-
-    public static VLESSBean DEFAULT_BEAN = new VLESSBean() {{
-        serverPort = 1080;
-        initDefaultValues();
-    }};
-
-    public String encryption;
+public class VLESSBean extends StandardV2RayBean {
 
     @Override
-    public void initDefaultValues() {
-        super.initDefaultValues();
+    public void initializeDefaultValues() {
+        super.initializeDefaultValues();
 
         if (StrUtil.isBlank(encryption)) {
             encryption = "none";
         }
-    }
 
-    @Override
-    public void serialize(ByteBufferOutput output) {
-        super.serialize(output);
-        output.writeString(encryption);
-    }
-
-    @Override
-    public void deserialize(ByteBufferInput input) {
-        super.deserialize(input);
-        encryption = input.readString();
     }
 
     @NotNull
@@ -64,4 +45,17 @@ public class VLESSBean extends AbstractV2RayBean {
     public VLESSBean clone() {
         return KryoConverters.deserialize(new VLESSBean(), KryoConverters.serialize(this));
     }
+
+    public static final Creator<VLESSBean> CREATOR = new CREATOR<VLESSBean>() {
+        @NonNull
+        @Override
+        public VLESSBean newInstance() {
+            return new VLESSBean();
+        }
+
+        @Override
+        public VLESSBean[] newArray(int size) {
+            return new VLESSBean[size];
+        }
+    };
 }

@@ -27,7 +27,7 @@ import androidx.core.view.ViewCompat
 import io.nekohasekai.sagernet.R
 import io.nekohasekai.sagernet.widget.ListHolderListener
 
-class SettingsFragment : ToolbarFragment(R.layout.layout_settings_activity) {
+class SettingsFragment : ToolbarFragment(R.layout.layout_config_settings) {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
@@ -37,7 +37,7 @@ class SettingsFragment : ToolbarFragment(R.layout.layout_settings_activity) {
 
         parentFragmentManager.beginTransaction()
             .replace(R.id.settings, SettingsPreferenceFragment())
-            .commit()
+            .commitAllowingStateLoss()
     }
 
 }

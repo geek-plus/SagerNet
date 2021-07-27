@@ -23,7 +23,7 @@ package io.nekohasekai.sagernet.ui.profile
 
 import android.os.Bundle
 import androidx.preference.EditTextPreference
-import androidx.preference.PreferenceFragmentCompat
+import com.takisoft.preferencex.PreferenceFragmentCompat
 import io.nekohasekai.sagernet.Key
 import io.nekohasekai.sagernet.R
 import io.nekohasekai.sagernet.database.DataStore
@@ -34,17 +34,14 @@ class SocksSettingsActivity : ProfileSettingsActivity<SOCKSBean>() {
 
     override fun createEntity() = SOCKSBean()
 
-    override fun init() {
-        SOCKSBean.DEFAULT_BEAN.init()
-    }
-
     override fun SOCKSBean.init() {
         DataStore.profileName = name
         DataStore.serverAddress = serverAddress
         DataStore.serverPort = serverPort
         DataStore.serverUsername = username
         DataStore.serverPassword = password
-        DataStore.serverUdp = udp
+        DataStore.serverTLS = tls
+        DataStore.serverSNI = sni
     }
 
     override fun SOCKSBean.serialize() {
@@ -53,7 +50,8 @@ class SocksSettingsActivity : ProfileSettingsActivity<SOCKSBean>() {
         serverPort = DataStore.serverPort
         username = DataStore.serverUsername
         password = DataStore.serverPassword
-        udp = DataStore.serverUdp
+        tls = DataStore.serverTLS
+        sni = DataStore.serverSNI
     }
 
     override fun PreferenceFragmentCompat.createPreferences(
