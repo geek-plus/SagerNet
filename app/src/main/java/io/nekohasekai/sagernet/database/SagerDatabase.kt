@@ -1,8 +1,6 @@
 /******************************************************************************
  *                                                                            *
- * Copyright (C) 2021 by nekohasekai <sekai@neko.services>                    *
- * Copyright (C) 2021 by Max Lv <max.c.lv@gmail.com>                          *
- * Copyright (C) 2021 by Mygod Studio <contact-shadowsocks-android@mygod.be>  *
+ * Copyright (C) 2021 by nekohasekai <contact-sagernet@sekai.icu>             *
  *                                                                            *
  * This program is free software: you can redistribute it and/or modify       *
  * it under the terms of the GNU General Public License as published by       *
@@ -35,8 +33,8 @@ import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
 
 @Database(
-    entities = [ProxyGroup::class, ProxyEntity::class, RuleEntity::class, KeyValuePair::class],
-    version = 2
+    entities = [ProxyGroup::class, ProxyEntity::class, RuleEntity::class, StatsEntity::class, KeyValuePair::class],
+    version = 10
 )
 @TypeConverters(value = [KryoConverters::class, GsonConverters::class])
 @GenerateRoomMigrations
@@ -59,6 +57,7 @@ abstract class SagerDatabase : RoomDatabase() {
         val groupDao get() = instance.groupDao()
         val proxyDao get() = instance.proxyDao()
         val rulesDao get() = instance.rulesDao()
+        val statsDao get() = instance.statsDao()
 
     }
 
@@ -66,5 +65,6 @@ abstract class SagerDatabase : RoomDatabase() {
     abstract fun groupDao(): ProxyGroup.Dao
     abstract fun proxyDao(): ProxyEntity.Dao
     abstract fun rulesDao(): RuleEntity.Dao
+    abstract fun statsDao(): StatsEntity.Dao
 
 }

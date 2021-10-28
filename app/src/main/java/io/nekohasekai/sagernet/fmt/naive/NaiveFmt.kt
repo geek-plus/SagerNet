@@ -1,8 +1,6 @@
 /******************************************************************************
  *                                                                            *
- * Copyright (C) 2021 by nekohasekai <sekai@neko.services>                    *
- * Copyright (C) 2021 by Max Lv <max.c.lv@gmail.com>                          *
- * Copyright (C) 2021 by Mygod Studio <contact-shadowsocks-android@mygod.be>  *
+ * Copyright (C) 2021 by nekohasekai <contact-sagernet@sekai.icu>             *
  *                                                                            *
  * This program is free software: you can redistribute it and/or modify       *
  * it under the terms of the GNU General Public License as published by       *
@@ -47,9 +45,7 @@ fun parseNaive(link: String): NaiveBean {
 }
 
 fun NaiveBean.toUri(proxyOnly: Boolean = false): String {
-    val builder = linkBuilder()
-        .host(serverAddress)
-        .port(finalPort)
+    val builder = linkBuilder().host(finalAddress).port(finalPort)
     if (username.isNotBlank()) {
         builder.username(username)
         if (password.isNotBlank()) {
@@ -67,7 +63,7 @@ fun NaiveBean.toUri(proxyOnly: Boolean = false): String {
     return builder.toLink(if (proxyOnly) proto else "naive+$proto", false)
 }
 
-fun NaiveBean.buildNaiveConfig(port: Int): String {
+fun NaiveBean.buildNaiveConfig(port: Int, mux: Boolean): String {
     return JSONObject().also {
         it["listen"] = "socks://$LOCALHOST:$port"
         it["proxy"] = toUri(true)
@@ -79,6 +75,9 @@ fun NaiveBean.buildNaiveConfig(port: Int): String {
         }
         if (DataStore.enableLog) {
             it["log"] = ""
+        }
+        if (mux) {
+            it["concurrency"] = DataStore.muxConcurrency
         }
     }.toStringPretty()
 }

@@ -1,8 +1,6 @@
 /******************************************************************************
  *                                                                            *
- * Copyright (C) 2021 by nekohasekai <sekai@neko.services>                    *
- * Copyright (C) 2021 by Max Lv <max.c.lv@gmail.com>                          *
- * Copyright (C) 2021 by Mygod Studio <contact-shadowsocks-android@mygod.be>  *
+ * Copyright (C) 2021 by nekohasekai <contact-sagernet@sekai.icu>             *
  *                                                                            *
  * This program is free software: you can redistribute it and/or modify       *
  * it under the terms of the GNU General Public License as published by       *
@@ -61,6 +59,7 @@ public class SubscriptionBean extends Serializable {
     public List<String> protocols;
 
     public Set<String> selectedGroups;
+    public Set<String> selectedOwners;
     public Set<String> selectedTags;
 
     public SubscriptionBean() {
@@ -68,7 +67,7 @@ public class SubscriptionBean extends Serializable {
 
     @Override
     public void serializeToBuffer(ByteBufferOutput output) {
-        output.writeInt(0);
+        output.writeInt(1);
 
         output.writeInt(type);
 
@@ -97,6 +96,7 @@ public class SubscriptionBean extends Serializable {
             output.writeInt(expiryDate);
             KryosKt.writeStringList(output, protocols);
             KryosKt.writeStringList(output, selectedGroups);
+            KryosKt.writeStringList(output, selectedOwners);
             KryosKt.writeStringList(output, selectedTags);
         }
 
@@ -162,6 +162,9 @@ public class SubscriptionBean extends Serializable {
             protocols = KryosKt.readStringList(input);
             if (input.canReadVarInt()) {
                 selectedGroups = KryosKt.readStringSet(input);
+                if (version >= 1) {
+                    selectedOwners = KryosKt.readStringSet(input);
+                }
                 selectedTags = KryosKt.readStringSet(input);
             }
         }
@@ -215,6 +218,7 @@ public class SubscriptionBean extends Serializable {
         if (expiryDate == null) expiryDate = 0;
         if (protocols == null) protocols = new ArrayList<>();
         if (selectedGroups == null) selectedGroups = new LinkedHashSet<>();
+        if (selectedOwners == null) selectedOwners = new LinkedHashSet<>();
         if (selectedTags == null) selectedTags = new LinkedHashSet<>();
 
     }

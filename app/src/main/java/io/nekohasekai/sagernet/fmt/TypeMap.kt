@@ -1,8 +1,6 @@
 /******************************************************************************
  *                                                                            *
- * Copyright (C) 2021 by nekohasekai <sekai@neko.services>                    *
- * Copyright (C) 2021 by Max Lv <max.c.lv@gmail.com>                          *
- * Copyright (C) 2021 by Mygod Studio <contact-shadowsocks-android@mygod.be>  *
+ * Copyright (C) 2021 by nekohasekai <contact-sagernet@sekai.icu>             *
  *                                                                            *
  * This program is free software: you can redistribute it and/or modify       *
  * it under the terms of the GNU General Public License as published by       *
@@ -38,6 +36,10 @@ object TypeMap : HashMap<String, Int>() {
         this["rb"] = ProxyEntity.TYPE_RELAY_BATON
         this["brook"] = ProxyEntity.TYPE_BROOK
         this["config"] = ProxyEntity.TYPE_CONFIG
+        this["hysteria"] = ProxyEntity.TYPE_HYSTERIA
+        this["snell"] = ProxyEntity.TYPE_SNELL
+        this["ssh"] = ProxyEntity.TYPE_SSH
+        this["wg"] = ProxyEntity.TYPE_WG
     }
 
     val reversed = HashMap<Int, String>()

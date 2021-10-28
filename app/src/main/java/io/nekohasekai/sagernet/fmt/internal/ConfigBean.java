@@ -1,8 +1,6 @@
 /******************************************************************************
  *                                                                            *
- * Copyright (C) 2021 by nekohasekai <sekai@neko.services>                    *
- * Copyright (C) 2021 by Max Lv <max.c.lv@gmail.com>                          *
- * Copyright (C) 2021 by Mygod Studio <contact-shadowsocks-android@mygod.be>  *
+ * Copyright (C) 2021 by nekohasekai <contact-sagernet@sekai.icu>             *
  *                                                                            *
  * This program is free software: you can redistribute it and/or modify       *
  * it under the terms of the GNU General Public License as published by       *
@@ -28,7 +26,6 @@ import com.esotericsoftware.kryo.io.ByteBufferOutput;
 
 import cn.hutool.core.util.StrUtil;
 import io.nekohasekai.sagernet.fmt.KryoConverters;
-import io.nekohasekai.sagernet.fmt.brook.BrookBean;
 
 public class ConfigBean extends InternalBean {
 
@@ -74,7 +71,7 @@ public class ConfigBean extends InternalBean {
         return KryoConverters.deserialize(new ConfigBean(), KryoConverters.serialize(this));
     }
 
-    public static final Creator<ConfigBean> ConfigBean = new CREATOR<ConfigBean>() {
+    public static final Creator<ConfigBean> CREATOR = new CREATOR<ConfigBean>() {
         @NonNull
         @Override
         public ConfigBean newInstance() {

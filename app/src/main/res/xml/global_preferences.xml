@@ -33,6 +33,32 @@
             app:key="serviceMode"
             app:title="@string/service_mode"
             app:useSimpleSummaryProvider="true" />
+        <com.takisoft.preferencex.SimpleMenuPreference
+            app:defaultValue="0"
+            app:entries="@array/tun_implementation"
+            app:entryValues="@array/int_array_2"
+            app:icon="@drawable/ic_baseline_flip_camera_android_24"
+            app:key="tunImplementation"
+            app:title="@string/tun_implementation"
+            app:useSimpleSummaryProvider="true" />
+        <SwitchPreference
+            app:icon="@drawable/ic_baseline_manage_search_24"
+            app:key="appTrafficStatistics"
+            app:summary="@string/traffic_statistics_summary"
+            app:title="@string/app_traffic_statistics" />
+        <SwitchPreference
+            app:defaultValue="true"
+            app:key="profileTrafficStatistics"
+            app:summary="@string/profile_traffic_statistics_summary"
+            app:title="@string/profile_traffic_statistics" />
+        <com.takisoft.preferencex.SimpleMenuPreference
+            app:defaultValue="1000"
+            app:entries="@array/notification_entry"
+            app:entryValues="@array/notification_value"
+            app:icon="@drawable/ic_baseline_shutter_speed_24"
+            app:key="speedInterval"
+            app:title="@string/speed_interval"
+            app:useSimpleSummaryProvider="true" />
         <SwitchPreference
             app:icon="@drawable/ic_baseline_center_focus_weak_24"
             app:key="alwaysShowAddress"
@@ -49,14 +75,6 @@
             app:key="meteredNetwork"
             app:summary="@string/metered_summary"
             app:title="@string/metered" />
-        <com.takisoft.preferencex.SimpleMenuPreference
-            app:defaultValue="1000"
-            app:entries="@array/notification_entry"
-            app:entryValues="@array/notification_value"
-            app:icon="@drawable/ic_baseline_shutter_speed_24"
-            app:key="speedInterval"
-            app:title="@string/speed_interval"
-            app:useSimpleSummaryProvider="true" />
         <SwitchPreference
             app:icon="@drawable/ic_baseline_speed_24"
             app:key="showDirectSpeed"
@@ -80,44 +98,6 @@
             app:title="@string/enable_log" />
     </PreferenceCategory>
 
-    <PreferenceCategory app:title="@string/vpn_settings">
-        <com.takisoft.preferencex.SimpleMenuPreference
-            app:defaultValue="1"
-            app:entries="@array/vpn_mode"
-            app:entryValues="@array/int_array_2"
-            app:icon="@drawable/ic_baseline_vpn_key_24"
-            app:key="vpnMode"
-            app:title="@string/vpn_mode"
-            app:useSimpleSummaryProvider="true" />
-        <SwitchPreference
-            app:icon="@drawable/ic_baseline_fast_forward_24"
-            app:key="multiThreadForward"
-            app:summary="@string/multi_thread_forwarding_sum"
-            app:title="@string/multi_thread_forwarding" />
-        <com.takisoft.preferencex.SimpleMenuPreference
-            app:defaultValue="0"
-            app:entries="@array/icmp_echo_strategy"
-            app:entryValues="@array/int_array_3"
-            app:icon="@drawable/ic_baseline_emoji_emotions_24"
-            app:key="icmpEchoStrategy"
-            app:title="@string/icmp_echo_strategy"
-            app:useSimpleSummaryProvider="true" />
-        <EditTextPreference
-            app:defaultValue="50"
-            app:icon="@drawable/ic_baseline_timelapse_24"
-            app:key="icmpEchoReplyDelay"
-            app:title="@string/icmp_echo_reply_delay"
-            app:useSimpleSummaryProvider="true" />
-        <com.takisoft.preferencex.SimpleMenuPreference
-            app:defaultValue="0"
-            app:entries="@array/ip_other_strategy"
-            app:entryValues="@array/int_array_2"
-            app:icon="@drawable/ic_baseline_import_contacts_24"
-            app:key="ipOtherStrategy"
-            app:title="@string/ip_other_strategy"
-            app:useSimpleSummaryProvider="true" />
-    </PreferenceCategory>
-
     <PreferenceCategory app:title="@string/cag_route">
         <SwitchPreference
             app:icon="@drawable/ic_navigation_apps"
@@ -133,26 +113,28 @@
             app:key="bypassLanInCoreOnly"
             app:title="@string/bypass_lan_in_core_only" />
         <com.takisoft.preferencex.SimpleMenuPreference
-            app:defaultValue="IPIfNonMatch"
+            app:defaultValue="AsIs"
             app:entries="@array/domain_strategy"
             app:entryValues="@array/domain_strategy"
             app:icon="@drawable/ic_action_dns"
             app:key="domainStrategy"
             app:title="@string/domain_strategy"
             app:useSimpleSummaryProvider="true" />
-        <com.takisoft.preferencex.SimpleMenuPreference
-            app:defaultValue="mph"
-            app:entries="@array/domain_matcher_entry"
-            app:entryValues="@array/domain_matcher_value"
-            app:icon="@drawable/ic_baseline_domain_24"
-            app:key="domainMatcher"
-            app:title="@string/domain_matcher"
-            app:useSimpleSummaryProvider="true" />
         <SwitchPreference
             app:defaultValue="true"
             app:icon="@drawable/ic_baseline_manage_search_24"
             app:key="trafficSniffing"
             app:title="@string/traffic_sniffing" />
+        <SwitchPreference
+            app:icon="@drawable/baseline_construction_24"
+            app:key="destinationOverride"
+            app:summary="@string/destination_override_summary"
+            app:title="@string/destination_override" />
+        <SwitchPreference
+            app:icon="@drawable/baseline_wrap_text_24"
+            app:key="resolveDestination"
+            app:summary="@string/resolve_destination_summary"
+            app:title="@string/resolve_destination" />
         <com.takisoft.preferencex.SimpleMenuPreference
             app:defaultValue="1"
             app:entries="@array/ipv6_mode"
@@ -175,10 +157,17 @@
         <com.takisoft.preferencex.SimpleMenuPreference
             app:defaultValue="0"
             app:entries="@array/ss_aead_provider"
-            app:entryValues="@array/int_array_2"
+            app:entryValues="@array/ss_aead_provider_values"
             app:icon="@drawable/ic_baseline_nfc_24"
             app:key="providerShadowsocksAEAD"
             app:title="@string/ss_aead_provider"
+            app:useSimpleSummaryProvider="true" />
+        <com.takisoft.preferencex.SimpleMenuPreference
+            app:defaultValue="0"
+            app:entries="@array/ss_stream_provider"
+            app:entryValues="@array/ss_stream_provider_values"
+            app:key="providerShadowsocksStream"
+            app:title="@string/ss_stream_provider"
             app:useSimpleSummaryProvider="true" />
         <com.takisoft.preferencex.SimpleMenuPreference
             app:defaultValue="0"
@@ -257,11 +246,6 @@
             app:key="transproxyMode"
             app:title="@string/transproxy_mode"
             app:useSimpleSummaryProvider="true" />
-        <EditTextPreference
-            app:icon="@drawable/ic_baseline_nfc_24"
-            app:key="apiPort"
-            app:title="@string/api_port"
-            app:useSimpleSummaryProvider="true" />
     </PreferenceCategory>
 
     <PreferenceCategory app:title="@string/cag_misc">
@@ -300,6 +284,11 @@
             app:key="tcpKeepAliveInterval"
             app:title="@string/tcp_keep_alive_interval"
             app:useSimpleSummaryProvider="true" />
+        <SwitchPreference
+            app:icon="@drawable/baseline_save_24"
+            app:key="enablePcap"
+            app:summary="@string/pcap_summary"
+            app:title="@string/enable_pcap" />
     </PreferenceCategory>
 
 

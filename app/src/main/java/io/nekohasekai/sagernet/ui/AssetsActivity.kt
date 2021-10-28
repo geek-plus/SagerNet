@@ -1,8 +1,6 @@
 /******************************************************************************
  *                                                                            *
- * Copyright (C) 2021 by nekohasekai <sekai@neko.services>                    *
- * Copyright (C) 2021 by Max Lv <max.c.lv@gmail.com>                          *
- * Copyright (C) 2021 by Mygod Studio <contact-shadowsocks-android@mygod.be>  *
+ * Copyright (C) 2021 by nekohasekai <contact-sagernet@sekai.icu>             *
  *                                                                            *
  * This program is free software: you can redistribute it and/or modify       *
  * it under the terms of the GNU General Public License as published by       *
@@ -32,7 +30,6 @@ import androidx.core.view.isInvisible
 import androidx.recyclerview.widget.ItemTouchHelper
 import androidx.recyclerview.widget.RecyclerView
 import cn.hutool.json.JSONObject
-import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.snackbar.Snackbar
 import io.nekohasekai.sagernet.R
 import io.nekohasekai.sagernet.database.DataStore
@@ -40,12 +37,12 @@ import io.nekohasekai.sagernet.databinding.LayoutAssetItemBinding
 import io.nekohasekai.sagernet.databinding.LayoutAssetsBinding
 import io.nekohasekai.sagernet.ktx.*
 import io.nekohasekai.sagernet.widget.UndoSnackbarManager
+import libcore.Libcore
 import okhttp3.Request
 import java.io.File
 import java.io.FileNotFoundException
 import java.util.*
 import java.util.concurrent.atomic.AtomicInteger
-import kotlin.collections.ArrayList
 
 class AssetsActivity : ThemedActivity() {
 
@@ -122,24 +119,25 @@ class AssetsActivity : ThemedActivity() {
             val fileName = contentResolver.query(file, null, null, null, null)?.use { cursor ->
                 cursor.moveToFirst()
                 cursor.getColumnIndexOrThrow(OpenableColumns.DISPLAY_NAME).let(cursor::getString)
-            }?.takeIf { it.isNotBlank() } ?: file.pathSegments.last().substringAfterLast('/')
+            }?.takeIf { it.isNotBlank() } ?: file.pathSegments.last()
+                .substringAfterLast('/')
                 .substringAfter(':')
 
             if (!fileName.endsWith(".dat")) {
-                MaterialAlertDialogBuilder(this).setTitle(R.string.error_title)
-                    .setMessage(getString(R.string.route_not_asset, fileName))
-                    .setPositiveButton(android.R.string.ok, null).show()
+                alert(getString(R.string.route_not_asset, fileName)).show()
                 return@registerForActivityResult
             }
             val filesDir = getExternalFilesDir(null) ?: filesDir
 
             runOnDefaultDispatcher {
-                File(filesDir, fileName).apply {
+                val outFile = File(filesDir, fileName).apply {
                     parentFile?.mkdirs()
-                }.outputStream().use { out ->
-                    contentResolver.openInputStream(file)?.use {
-                        it.copyTo(out)
-                    }
+                }
+
+                contentResolver.openInputStream(file)?.use(outFile.outputStream())
+
+                File(outFile.parentFile, outFile.nameWithoutExtension + ".version.txt").apply {
+                    if (isFile) delete()
                 }
 
                 adapter.reloadAssets()
@@ -170,7 +168,7 @@ class AssetsActivity : ThemedActivity() {
         fun reloadAssets() {
             val filesDir = getExternalFilesDir(null) ?: filesDir
             val files = filesDir.listFiles()
-                ?.filter { it.isFile && !it.name.endsWith(".version.txt") && it.name !in internalFiles }
+                ?.filter { it.isFile && it.name.endsWith(".dat") && it.name !in internalFiles }
             assets.clear()
             assets.add(File(filesDir, "geoip.dat"))
             assets.add(
@@ -220,13 +218,11 @@ class AssetsActivity : ThemedActivity() {
 
     val updating = AtomicInteger()
 
-    inner class AssetHolder(val binding: LayoutAssetItemBinding) :
-        RecyclerView.ViewHolder(binding.root) {
+    inner class AssetHolder(val binding: LayoutAssetItemBinding) : RecyclerView.ViewHolder(binding.root) {
         lateinit var file: File
 
         fun bind(file: File) {
             this.file = file
-            binding.root.setOnClickListener {}
 
             binding.assetName.text = file.name
             val versionFile = File(file.parentFile, "${file.nameWithoutExtension}.version.txt")
@@ -260,9 +256,7 @@ class AssetsActivity : ThemedActivity() {
                         updateAsset(file, versionFile, localVersion)
                     }.onFailure {
                         onMainDispatcher {
-                            MaterialAlertDialogBuilder(this@AssetsActivity).setTitle(R.string.error_title)
-                                .setMessage(it.readableMessage)
-                                .setPositiveButton(android.R.string.ok, null).show()
+                            alert(it.readableMessage).show()
                         }
                     }
 
@@ -287,11 +281,12 @@ class AssetsActivity : ThemedActivity() {
         var fileName = file.name
         if (DataStore.rulesProvider == 0) {
             if (file.name == internalFiles[0]) {
-                repo = "v2fly/geoip"
+                repo = "SagerNet/geoip"
             } else {
                 repo = "v2fly/domain-list-community"
                 fileName = "dlc.dat"
             }
+            fileName = "$fileName.xz"
         } else {
             repo = "Loyalsoldier/v2ray-rules-dat"
         }
@@ -301,7 +296,7 @@ class AssetsActivity : ThemedActivity() {
         ).execute()
 
         if (!response.isSuccessful) {
-            error("Error when fetching latest release of $repo : HTTP ${response.code}")
+            error("Error when fetching latest release of $repo : HTTP ${response.code}\n\n${response.body?.string()}")
         }
 
         val release = JSONObject(response.body!!.string())
@@ -327,10 +322,15 @@ class AssetsActivity : ThemedActivity() {
             error("Error when downloading $browserDownloadUrl : HTTP ${response.code}")
         }
 
-        file.outputStream().use { out ->
-            response.body!!.byteStream().use {
-                it.copyTo(out)
-            }
+        val cacheFile = File(file.parentFile, file.name + ".tmp")
+        response.body!!.use { body ->
+            body.byteStream().use(cacheFile.outputStream())
+        }
+        if (fileName.endsWith(".xz")) {
+            Libcore.unxz(cacheFile.absolutePath, file.absolutePath)
+            cacheFile.delete()
+        } else {
+            cacheFile.renameTo(file)
         }
 
         versionFile.writeText(tagName)

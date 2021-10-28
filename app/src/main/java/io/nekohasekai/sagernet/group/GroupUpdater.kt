@@ -1,8 +1,6 @@
 /******************************************************************************
  *                                                                            *
- * Copyright (C) 2021 by nekohasekai <sekai@neko.services>                    *
- * Copyright (C) 2021 by Max Lv <max.c.lv@gmail.com>                          *
- * Copyright (C) 2021 by Mygod Studio <contact-shadowsocks-android@mygod.be>  *
+ * Copyright (C) 2021 by nekohasekai <contact-sagernet@sekai.icu>             *
  *                                                                            *
  * This program is free software: you can redistribute it and/or modify       *
  * it under the terms of the GNU General Public License as published by       *
@@ -31,6 +29,7 @@ import io.nekohasekai.sagernet.database.SubscriptionBean
 import io.nekohasekai.sagernet.fmt.AbstractBean
 import io.nekohasekai.sagernet.fmt.brook.BrookBean
 import io.nekohasekai.sagernet.fmt.http.HttpBean
+import io.nekohasekai.sagernet.fmt.hysteria.HysteriaBean
 import io.nekohasekai.sagernet.fmt.naive.NaiveBean
 import io.nekohasekai.sagernet.fmt.relaybaton.RelayBatonBean
 import io.nekohasekai.sagernet.fmt.socks.SOCKSBean
@@ -45,7 +44,6 @@ import okhttp3.OkHttpClient
 import okhttp3.dnsoverhttps.DnsOverHttps
 import java.net.Inet4Address
 import java.net.InetAddress
-import java.time.Duration
 import java.util.*
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -75,15 +73,17 @@ abstract class GroupUpdater {
         if (connected) {
             val remoteDns = DataStore.remoteDns
             when {
-                remoteDns.startsWith("https+local://") -> dohUrl =
-                    remoteDns.replace("https+local://", "https://")
+                remoteDns.startsWith("https+local://") -> dohUrl = remoteDns.replace(
+                    "https+local://", "https://"
+                )
                 remoteDns.startsWith("https://") -> dohUrl = remoteDns
             }
         } else {
             val directDns = DataStore.directDns
             when {
-                directDns.startsWith("https+local://") -> dohUrl =
-                    directDns.replace("https+local://", "https://")
+                directDns.startsWith("https+local://") -> dohUrl = directDns.replace(
+                    "https+local://", "https://"
+                )
                 directDns.startsWith("https://") -> dohUrl = directDns
             }
         }
@@ -161,6 +161,9 @@ abstract class GroupUpdater {
                 is TrojanGoBean -> {
                     if (sni.isBlank()) sni = bean.serverAddress
                 }
+                is HysteriaBean -> {
+                    if (sni.isBlank()) sni = bean.serverAddress
+                }
             }
 
             bean.serverAddress = address
@@ -186,11 +189,7 @@ abstract class GroupUpdater {
                 val subscription = proxyGroup.subscription!!
                 val connected = DataStore.startedProfile > 0
 
-                val timeout = Duration.ofSeconds(5)
-                val httpClient = createProxyClient().newBuilder()
-                        .connectTimeout(timeout)
-                        .readTimeout(timeout)
-                        .build()
+                val httpClient = createProxyClient()
                 val userInterface = GroupManager.userInterface
 
                 if (userInterface != null) {

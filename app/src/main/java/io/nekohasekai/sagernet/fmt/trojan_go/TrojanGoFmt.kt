@@ -1,8 +1,6 @@
 /******************************************************************************
  *                                                                            *
- * Copyright (C) 2021 by nekohasekai <sekai@neko.services>                    *
- * Copyright (C) 2021 by Max Lv <max.c.lv@gmail.com>                          *
- * Copyright (C) 2021 by Mygod Studio <contact-shadowsocks-android@mygod.be>  *
+ * Copyright (C) 2021 by nekohasekai <contact-sagernet@sekai.icu>             *
  *                                                                            *
  * This program is free software: you can redistribute it and/or modify       *
  * it under the terms of the GNU General Public License as published by       *
@@ -138,8 +136,8 @@ fun TrojanGoBean.buildTrojanGoConfig(port: Int, mux: Boolean): String {
             sni = serverAddress
         }
 
-        if (sni.isNotBlank()) conf["ssl"] = JSONObject().also {
-            it["sni"] = sni
+        conf["ssl"] = JSONObject().also {
+            if (sni.isNotBlank()) it["sni"] = sni
         }
 
         when {

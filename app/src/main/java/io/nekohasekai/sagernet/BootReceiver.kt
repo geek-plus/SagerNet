@@ -1,6 +1,6 @@
 /******************************************************************************
  *                                                                            *
- * Copyright (C) 2021 by nekohasekai <sekai@neko.services>                    *
+ * Copyright (C) 2021 by nekohasekai <contact-sagernet@sekai.icu>             *
  * Copyright (C) 2021 by Max Lv <max.c.lv@gmail.com>                          *
  * Copyright (C) 2021 by Mygod Studio <contact-shadowsocks-android@mygod.be>  *
  *                                                                            *
@@ -27,8 +27,10 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
+import io.nekohasekai.sagernet.bg.SubscriptionUpdater
 import io.nekohasekai.sagernet.database.DataStore
 import io.nekohasekai.sagernet.ktx.app
+import io.nekohasekai.sagernet.ktx.runOnDefaultDispatcher
 
 class BootReceiver : BroadcastReceiver() {
     companion object {
@@ -42,6 +44,10 @@ class BootReceiver : BroadcastReceiver() {
     }
 
     override fun onReceive(context: Context, intent: Intent) {
+        runOnDefaultDispatcher {
+            SubscriptionUpdater.reconfigureUpdater()
+        }
+
         if (!DataStore.persistAcrossReboot) {   // sanity check
             enabled = false
             return

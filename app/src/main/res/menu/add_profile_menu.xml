@@ -55,6 +55,18 @@
                         android:id="@+id/action_new_brook"
                         android:title="@string/action_brook" />
                     <item
+                        android:id="@+id/action_new_hysteria"
+                        android:title="@string/action_hysteria" />
+                    <item
+                        android:id="@+id/action_new_snell"
+                        android:title="@string/action_snell" />
+                    <item
+                        android:id="@+id/action_new_ssh"
+                        android:title="@string/action_ssh" />
+                    <item
+                        android:id="@+id/action_new_wg"
+                        android:title="@string/action_wireguard" />
+                    <item
                         android:id="@+id/action_new_config"
                         android:title="@string/custom_config" />
                     <item
@@ -84,14 +96,25 @@
                 android:id="@+id/action_connection_url_test"
                 android:title="@string/connection_test_url_test" />
             <item
-                android:id="@+id/action_connection_url_reuse"
-                android:title="@string/connection_test_url_test_reuse_mode" />
-            <item
-                android:id="@+id/action_connection_reorder"
-                android:title="@string/connection_test_reorder" />
-            <item
                 android:id="@+id/action_connection_test_clear_results"
                 android:title="@string/connection_test_clear_results" />
+        </menu>
+    </item>
+    <item
+        android:id="@+id/action_order"
+        android:title="@string/group_order">
+        <menu>
+            <group android:checkableBehavior="single">
+                <item
+                    android:id="@+id/action_order_origin"
+                    android:title="@string/group_order_origin" />
+                <item
+                    android:id="@+id/action_order_by_name"
+                    android:title="@string/group_order_by_name" />
+                <item
+                    android:id="@+id/action_order_by_delay"
+                    android:title="@string/group_order_by_delay" />
+            </group>
         </menu>
     </item>
     <item
@@ -101,6 +124,9 @@
             <item
                 android:id="@+id/action_filter_groups"
                 android:title="@string/group_filter_groups" />
+            <item
+                android:id="@+id/group_filter_owners"
+                android:title="@string/group_filter_owners" />
             <item
                 android:id="@+id/action_filter_tags"
                 android:title="@string/group_filter_tags" />

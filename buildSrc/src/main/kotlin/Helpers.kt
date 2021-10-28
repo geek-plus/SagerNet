@@ -1,10 +1,10 @@
+import cn.hutool.core.codec.Base64
 import cn.hutool.core.util.RuntimeUtil
 import cn.hutool.crypto.digest.DigestUtil
 import com.android.build.gradle.AbstractAppExtension
 import com.android.build.gradle.BaseExtension
 import com.android.build.gradle.internal.api.BaseVariantOutputImpl
 import com.github.triplet.gradle.play.PlayPublisherExtension
-import org.apache.commons.codec.binary.Base64InputStream
 import org.apache.tools.ant.filters.StringInputStream
 import org.gradle.api.JavaVersion
 import org.gradle.api.Project
@@ -62,7 +62,8 @@ fun Project.requireLocalProperties(): Properties {
 
         val base64 = System.getenv("LOCAL_PROPERTIES")
         if (!base64.isNullOrBlank()) {
-            localProperties.load(Base64InputStream(StringInputStream(base64)))
+
+            localProperties.load(StringInputStream(Base64.decodeStr(base64)))
         } else if (project.rootProject.file("local.properties").exists()) {
             localProperties.load(rootProject.file("local.properties").inputStream())
         }
@@ -89,10 +90,10 @@ fun Project.requireTargetAbi(): String {
 fun Project.setupCommon() {
     android.apply {
         buildToolsVersion("30.0.3")
-        compileSdkVersion(30)
+        compileSdkVersion(31)
         defaultConfig {
-            minSdkVersion(21)
-            targetSdkVersion(30)
+            minSdk = 21
+            targetSdk = 31
         }
         buildTypes {
             getByName("release") {
@@ -104,21 +105,28 @@ fun Project.setupCommon() {
             targetCompatibility = javaVersion
         }
         lintOptions {
-            disable("MissingTranslation")
-            disable("ExtraTranslation")
-            disable("BlockedPrivateApi")
+            isShowAll = true
+            isCheckAllWarnings = true
+            isCheckReleaseBuilds = false
+            isWarningsAsErrors = true
+            textOutput = project.file("build/lint.txt")
+            htmlOutput = project.file("build/lint.html")
         }
         packagingOptions {
-            exclude("**/*.kotlin_*")
-            exclude("/META-INF/*.version")
-            exclude("/META-INF/native/**")
-            exclude("/META-INF/native-image/**")
-            exclude("/META-INF/INDEX.LIST")
-            exclude("DebugProbesKt.bin")
-            exclude("com/**")
-            exclude("org/**")
-            exclude("/inet/**")
-            exclude("**/*.proto")
+            excludes.addAll(
+                listOf(
+                    "**/*.kotlin_*",
+                    "/META-INF/*.version",
+                    "/META-INF/native/**",
+                    "/META-INF/native-image/**",
+                    "/META-INF/INDEX.LIST",
+                    "DebugProbesKt.bin",
+                    "com/**",
+                    "org/**",
+                    "**/*.java",
+                    "**/*.proto"
+                )
+            )
         }
         packagingOptions {
             jniLibs.useLegacyPackaging = true
@@ -132,9 +140,9 @@ fun Project.setupCommon() {
             applicationVariants.forEach { variant ->
                 variant.outputs.forEach {
                     it as BaseVariantOutputImpl
-                    it.outputFileName =
-                        it.outputFileName.replace("app", "${project.name}-" + variant.versionName)
-                            .replace("-release", "").replace("-oss", "")
+                    it.outputFileName = it.outputFileName.replace(
+                        "app", "${project.name}-" + variant.versionName
+                    ).replace("-release", "").replace("-oss", "")
                 }
             }
         }
@@ -174,6 +182,27 @@ fun Project.setupNdkLibrary() {
         externalNativeBuild.ndkBuild.path("src/main/jni/Android.mk")
     }
 }
+
+fun Project.setupCMakeLibrary() {
+    setupCommon()
+    setupNdk()
+    android.apply {
+        defaultConfig {
+            externalNativeBuild.cmake {
+                val targetAbi = requireTargetAbi()
+                if (targetAbi.isNotBlank()) {
+                    abiFilters(targetAbi)
+                } else {
+                    abiFilters("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
+                }
+                arguments("-j${Runtime.getRuntime().availableProcessors()}")
+            }
+        }
+
+        externalNativeBuild.cmake.path("src/main/cpp/CMakeLists.txt")
+    }
+}
+
 
 fun Project.setupPlay() {
     val serviceAccountCredentialsFile = rootProject.file("service_account_credentials.json")
@@ -381,9 +410,9 @@ fun Project.setupPlugin(projectName: String) {
 
             outputs.all {
                 this as BaseVariantOutputImpl
-                outputFileName =
-                    outputFileName.replace(project.name, "${project.name}-plugin-$versionName")
-                        .replace("-release", "").replace("-oss", "")
+                outputFileName = outputFileName.replace(
+                    project.name, "${project.name}-plugin-$versionName"
+                ).replace("-release", "").replace("-oss", "")
 
             }
         }
@@ -460,16 +489,16 @@ fun Project.setupApp() {
         applicationVariants.all {
             outputs.all {
                 this as BaseVariantOutputImpl
-                outputFileName =
-                    outputFileName.replace(project.name, "SN-$versionName").replace("-release", "")
-                        .replace("-oss", "")
+                outputFileName = outputFileName.replace(project.name, "SN-$versionName")
+                    .replace("-release", "")
+                    .replace("-oss", "")
 
             }
         }
 
         tasks.register("downloadAssets") {
             outputs.upToDateWhen {
-                !requireFlavor().endsWith("Release")
+                requireFlavor().endsWith("Debug")
             }
             doLast {
                 downloadAssets()
@@ -489,10 +518,10 @@ fun Project.setupApp() {
         add("androidTestImplementation", "androidx.test:runner:1.4.0")
         add("androidTestImplementation", "androidx.test.espresso:espresso-core:3.4.0")
 
-        if (targetAbi.isNotBlank()) {
-            add("implementation", project(":library:core"))
+        // workaround for f-droid builds
+        if (requireFlavor().contains("fdroid",true)) {
             add("implementation", project(":library:shadowsocks"))
-            add("implementation", project(":library:shadowsocksr"))
+            add("implementation", project(":library:shadowsocks-libev"))
         }
     }
 

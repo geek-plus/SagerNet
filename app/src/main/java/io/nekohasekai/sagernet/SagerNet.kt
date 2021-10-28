@@ -1,6 +1,6 @@
 /******************************************************************************
  *                                                                            *
- * Copyright (C) 2021 by nekohasekai <sekai@neko.services>                    *
+ * Copyright (C) 2021 by nekohasekai <contact-sagernet@sekai.icu>             *
  * Copyright (C) 2021 by Max Lv <max.c.lv@gmail.com>                          *
  * Copyright (C) 2021 by Mygod Studio <contact-shadowsocks-android@mygod.be>  *
  *                                                                            *
@@ -21,6 +21,7 @@
 
 package io.nekohasekai.sagernet
 
+import android.annotation.SuppressLint
 import android.app.*
 import android.app.admin.DevicePolicyManager
 import android.content.ClipData
@@ -32,26 +33,29 @@ import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.net.ConnectivityManager
 import android.os.Build
+import android.os.StrictMode
 import android.os.UserManager
 import androidx.annotation.RequiresApi
 import androidx.core.content.ContextCompat
 import androidx.core.content.getSystemService
 import go.Seq
 import io.nekohasekai.sagernet.bg.SagerConnection
+import io.nekohasekai.sagernet.bg.proto.UidDumper
 import io.nekohasekai.sagernet.database.DataStore
 import io.nekohasekai.sagernet.database.SagerDatabase
+import io.nekohasekai.sagernet.ktx.Logs
 import io.nekohasekai.sagernet.ktx.app
 import io.nekohasekai.sagernet.ktx.checkMT
-import io.nekohasekai.sagernet.ktx.runOnMainDispatcher
+import io.nekohasekai.sagernet.ktx.runOnDefaultDispatcher
 import io.nekohasekai.sagernet.ui.MainActivity
+import io.nekohasekai.sagernet.utils.CrashHandler
 import io.nekohasekai.sagernet.utils.DeviceStorageApp
 import io.nekohasekai.sagernet.utils.PackageCache
 import io.nekohasekai.sagernet.utils.Theme
 import kotlinx.coroutines.DEBUG_PROPERTY_NAME
 import kotlinx.coroutines.DEBUG_PROPERTY_VALUE_ON
-import libv2ray.Libv2ray
+import libcore.Libcore
 import org.conscrypt.Conscrypt
-import org.lsposed.hiddenapibypass.HiddenApiBypass
 import java.security.Security
 import androidx.work.Configuration as WorkConfiguration
 
@@ -64,33 +68,44 @@ class SagerNet : Application(),
         application = this
     }
 
+    val externalAssets by lazy { getExternalFilesDir(null) ?: filesDir }
+
     override fun onCreate() {
         super.onCreate()
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            HiddenApiBypass.addHiddenApiExemptions("L");
-        }
 
         System.setProperty(DEBUG_PROPERTY_NAME, DEBUG_PROPERTY_VALUE_ON)
-
+        Thread.setDefaultUncaughtExceptionHandler(CrashHandler)
         DataStore.init()
-
         updateNotificationChannels()
-
         Seq.setContext(this)
-        val externalAssets = getExternalFilesDir(null) ?: filesDir
-        Libv2ray.setAssetsPath(externalAssets.absolutePath, "v2ray/")
 
-        runOnMainDispatcher {
-            externalAssets.mkdirs()
-            checkMT()
+        externalAssets.mkdirs()
+        Libcore.initializeV2Ray(
+            filesDir.absolutePath + "/", externalAssets.absolutePath + "/", "v2ray/"
+        ) {
+            DataStore.rulesProvider == 0
+        }
+        Libcore.setenv("v2ray.conf.geoloader", "memconservative")
+        Libcore.setUidDumper(UidDumper)
 
+        runOnDefaultDispatcher {
             PackageCache.register()
+            checkMT()
         }
 
         Theme.apply(this)
         Theme.applyNightTheme()
 
         Security.insertProviderAt(Conscrypt.newProvider(), 1)
+
+        if (BuildConfig.DEBUG) StrictMode.setVmPolicy(
+            StrictMode.VmPolicy.Builder()
+                .detectLeakedSqlLiteObjects()
+                .detectLeakedClosableObjects()
+                .detectLeakedRegistrationObjects()
+                .penaltyLog()
+                .build()
+        )
     }
 
     fun getPackageInfo(packageName: String) = packageManager.getPackageInfo(
@@ -109,10 +124,18 @@ class SagerNet : Application(),
             .build()
     }
 
+    @SuppressLint("InlinedApi")
     companion object {
+
+        @Volatile
         var started = false
 
         lateinit var application: SagerNet
+
+        val isTv by lazy {
+            uiMode.currentModeType == Configuration.UI_MODE_TYPE_TELEVISION
+        }
+
         val deviceStorage by lazy {
             if (Build.VERSION.SDK_INT < 24) application else DeviceStorageApp(application)
         }
@@ -120,9 +143,12 @@ class SagerNet : Application(),
         val configureIntent: (Context) -> PendingIntent by lazy {
             {
                 PendingIntent.getActivity(
-                    it, 0, Intent(
+                    it,
+                    0,
+                    Intent(
                         application, MainActivity::class.java
-                    ).setFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT), 0
+                    ).setFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT),
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) PendingIntent.FLAG_IMMUTABLE else 0
                 )
             }
         }
@@ -131,6 +157,7 @@ class SagerNet : Application(),
         val connectivity by lazy { application.getSystemService<ConnectivityManager>()!! }
         val notification by lazy { application.getSystemService<NotificationManager>()!! }
         val user by lazy { application.getSystemService<UserManager>()!! }
+        val uiMode by lazy { application.getSystemService<UiModeManager>()!! }
         val packageInfo: PackageInfo by lazy { application.getPackageInfo(application.packageName) }
         val directBootSupported by lazy {
             Build.VERSION.SDK_INT >= 24 && try {
@@ -151,6 +178,7 @@ class SagerNet : Application(),
             clipboard.setPrimaryClip(ClipData.newPlainText(null, clip))
             true
         } catch (e: RuntimeException) {
+            Logs.w(e)
             false
         }
 
@@ -188,6 +216,10 @@ class SagerNet : Application(),
         fun stopService() =
             application.sendBroadcast(Intent(Action.CLOSE).setPackage(application.packageName))
 
+    }
+
+    override fun onLowMemory() {
+        super.onLowMemory()
     }
 
 }

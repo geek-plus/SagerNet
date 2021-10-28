@@ -1,6 +1,6 @@
 /******************************************************************************
  *                                                                            *
- * Copyright (C) 2021 by nekohasekai <sekai@neko.services>                    *
+ * Copyright (C) 2021 by nekohasekai <contact-sagernet@sekai.icu>             *
  * Copyright (C) 2021 by Max Lv <max.c.lv@gmail.com>                          *
  * Copyright (C) 2021 by Mygod Studio <contact-shadowsocks-android@mygod.be>  *
  *                                                                            *
@@ -35,6 +35,7 @@ import androidx.core.content.getSystemService
 import io.nekohasekai.sagernet.Action
 import io.nekohasekai.sagernet.R
 import io.nekohasekai.sagernet.SagerNet
+import io.nekohasekai.sagernet.aidl.AppStatsList
 import io.nekohasekai.sagernet.aidl.ISagerNetServiceCallback
 import io.nekohasekai.sagernet.aidl.TrafficStats
 import io.nekohasekai.sagernet.database.DataStore
@@ -56,30 +57,25 @@ class ServiceNotification(
     private val service: BaseService.Interface, profileName: String,
     channel: String, visible: Boolean = false,
 ) : BroadcastReceiver() {
+    val trafficStatistics = DataStore.profileTrafficStatistics
     val showDirectSpeed = DataStore.showDirectSpeed
 
     private val callback: ISagerNetServiceCallback by lazy {
         object : ISagerNetServiceCallback.Stub() {
             override fun stateChanged(state: Int, profileName: String?, msg: String?) {}   // ignore
             override fun trafficUpdated(profileId: Long, stats: TrafficStats, isCurrent: Boolean) {
-                if (profileId == 0L || !isCurrent) return
+                if (!trafficStatistics || profileId == 0L || !isCurrent) return
                 builder.apply {
                     if (showDirectSpeed) {
                         val speedDetail = (service as Context).getString(
-                            R.string.speed_detail,
-                            service.getString(
-                                R.string.speed,
-                                Formatter.formatFileSize(service, stats.txRateProxy)
-                            ),
-                            service.getString(
-                                R.string.speed,
-                                Formatter.formatFileSize(service, stats.rxRateProxy)
-                            ),
-                            service.getString(
+                            R.string.speed_detail, service.getString(
+                                R.string.speed, Formatter.formatFileSize(service, stats.txRateProxy)
+                            ), service.getString(
+                                R.string.speed, Formatter.formatFileSize(service, stats.rxRateProxy)
+                            ), service.getString(
                                 R.string.speed,
                                 Formatter.formatFileSize(service, stats.txRateDirect)
-                            ),
-                            service.getString(
+                            ), service.getString(
                                 R.string.speed,
                                 Formatter.formatFileSize(service, stats.rxRateDirect)
                             )
@@ -88,14 +84,10 @@ class ServiceNotification(
                         setContentText(speedDetail)
                     } else {
                         val speedSimple = (service as Context).getString(
-                            R.string.traffic,
-                            service.getString(
-                                R.string.speed,
-                                Formatter.formatFileSize(service, stats.txRateProxy)
-                            ),
-                            service.getString(
-                                R.string.speed,
-                                Formatter.formatFileSize(service, stats.rxRateProxy)
+                            R.string.traffic, service.getString(
+                                R.string.speed, Formatter.formatFileSize(service, stats.txRateProxy)
+                            ), service.getString(
+                                R.string.speed, Formatter.formatFileSize(service, stats.rxRateProxy)
                             )
                         )
                         setContentText(speedSimple)
@@ -111,18 +103,28 @@ class ServiceNotification(
                 show()
             }
 
-            override fun profilePersisted(profileId: Long) {}
+            override fun statsUpdated(statsList: AppStatsList?) {
+            }
+
+            override fun observatoryResultsUpdated(groupId: Long) {
+            }
+
+            override fun profilePersisted(profileId: Long) {
+            }
+
+            override fun missingPlugin(profileName: String?, pluginName: String?) {
+            }
+
+            override fun routeAlert(type: Int, routeName: String?) {
+            }
         }
     }
     private var callbackRegistered = false
 
-    private val builder = NotificationCompat.Builder(service as Context, channel)
-        .setWhen(0)
-        .setTicker(service.getString(R.string.forward_success))
-        .setContentTitle(profileName)
+    private val builder = NotificationCompat.Builder(service as Context, channel).setWhen(0)
+        .setTicker(service.getString(R.string.forward_success)).setContentTitle(profileName)
         .setContentIntent(SagerNet.configureIntent(service))
-        .setSmallIcon(R.drawable.ic_service_active)
-        .setCategory(NotificationCompat.CATEGORY_SERVICE)
+        .setSmallIcon(R.drawable.ic_service_active).setCategory(NotificationCompat.CATEGORY_SERVICE)
         .setPriority(if (visible) NotificationCompat.PRIORITY_LOW else NotificationCompat.PRIORITY_MIN)
 
     init {
@@ -134,7 +136,7 @@ class ServiceNotification(
                 service,
                 0,
                 Intent(Action.CLOSE).setPackage(service.packageName),
-                0
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) PendingIntent.FLAG_IMMUTABLE else 0
             )
         ).apply {
             setShowsUserInterface(false)
@@ -159,11 +161,11 @@ class ServiceNotification(
     }
 
     private fun updateCallback(screenOn: Boolean) {
+        if (!trafficStatistics) return
         if (screenOn) {
             service.data.binder.registerCallback(callback)
             service.data.binder.startListeningForBandwidth(
-                callback,
-                DataStore.speedInterval.toLong()
+                callback, DataStore.speedInterval.toLong()
             )
             callbackRegistered = true
         } else if (callbackRegistered) {    // unregister callback to save battery

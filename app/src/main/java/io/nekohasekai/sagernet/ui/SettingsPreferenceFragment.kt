@@ -1,8 +1,6 @@
 /******************************************************************************
  *                                                                            *
- * Copyright (C) 2021 by nekohasekai <sekai@neko.services>                    *
- * Copyright (C) 2021 by Max Lv <max.c.lv@gmail.com>                          *
- * Copyright (C) 2021 by Mygod Studio <contact-shadowsocks-android@mygod.be>  *
+ * Copyright (C) 2021 by nekohasekai <contact-sagernet@sekai.icu>             *
  *                                                                            *
  * This program is free software: you can redistribute it and/or modify       *
  * it under the terms of the GNU General Public License as published by       *
@@ -29,14 +27,19 @@ import androidx.core.app.ActivityCompat
 import androidx.preference.EditTextPreference
 import androidx.preference.Preference
 import androidx.preference.SwitchPreference
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.takisoft.preferencex.PreferenceFragmentCompat
 import com.takisoft.preferencex.SimpleMenuPreference
-import io.nekohasekai.sagernet.*
+import io.nekohasekai.sagernet.Key
+import io.nekohasekai.sagernet.R
+import io.nekohasekai.sagernet.SagerNet
+import io.nekohasekai.sagernet.TunImplementation
 import io.nekohasekai.sagernet.database.DataStore
 import io.nekohasekai.sagernet.database.preference.EditTextPreferenceModifiers
 import io.nekohasekai.sagernet.ktx.*
 import io.nekohasekai.sagernet.utils.Theme
 import io.nekohasekai.sagernet.widget.ColorPickerPreference
+import java.io.File
 
 class SettingsPreferenceFragment : PreferenceFragmentCompat() {
 
@@ -62,7 +65,7 @@ class SettingsPreferenceFragment : PreferenceFragmentCompat() {
             appTheme.remove()
         } else {
             appTheme.setOnPreferenceChangeListener { _, newTheme ->
-                if (serviceStarted()) {
+                if (SagerNet.started) {
                     SagerNet.reloadService()
                 }
                 val theme = Theme.getTheme(newTheme as Int)
@@ -124,11 +127,6 @@ class SettingsPreferenceFragment : PreferenceFragmentCompat() {
         val showDirectSpeed = findPreference<SwitchPreference>(Key.SHOW_DIRECT_SPEED)!!
         val ipv6Mode = findPreference<Preference>(Key.IPV6_MODE)!!
         val domainStrategy = findPreference<Preference>(Key.DOMAIN_STRATEGY)!!
-        val domainMatcher = findPreference<Preference>(Key.DOMAIN_MATCHER)!!
-        if (!isExpert) {
-            domainMatcher.remove()
-        }
-
         val trafficSniffing = findPreference<Preference>(Key.TRAFFIC_SNIFFING)!!
         val enableMux = findPreference<Preference>(Key.ENABLE_MUX)!!
         val enableMuxForAll = findPreference<Preference>(Key.ENABLE_MUX_FOR_ALL)!!
@@ -154,9 +152,7 @@ class SettingsPreferenceFragment : PreferenceFragmentCompat() {
         val transproxyPort = findPreference<EditTextPreference>(Key.TRANSPROXY_PORT)!!
         val transproxyMode = findPreference<SimpleMenuPreference>(Key.TRANSPROXY_MODE)!!
         val enableLog = findPreference<SwitchPreference>(Key.ENABLE_LOG)!!
-
-        val apiPort = findPreference<EditTextPreference>(Key.API_PORT)!!
-        val probeIndival = findPreference<EditTextPreference>(Key.PROBE_INTERVAL)!!
+        val probeInterval = findPreference<EditTextPreference>(Key.PROBE_INTERVAL)!!
 
         transproxyPort.isEnabled = requireTransproxy.isChecked
         transproxyMode.isEnabled = requireTransproxy.isChecked
@@ -168,38 +164,15 @@ class SettingsPreferenceFragment : PreferenceFragmentCompat() {
             true
         }
 
-        val vpnMode = findPreference<SimpleMenuPreference>(Key.VPN_MODE)!!
-        val multiThreadForward = findPreference<SwitchPreference>(Key.MULTI_THREAD_FORWARD)!!
-        val icmpEchoStrategy = findPreference<SimpleMenuPreference>(Key.ICMP_ECHO_STRATEGY)!!
-        val icmpEchoReplyDelay = findPreference<EditTextPreference>(Key.ICMP_ECHO_REPLY_DELAY)!!
-        val ipOtherStrategy = findPreference<SimpleMenuPreference>(Key.IP_OTHER_STRATEGY)!!
-
-        fun updateVpnMode(newMode: Int) {
-            val isForwarding = newMode == VpnMode.EXPERIMENTAL_FORWARDING
-
-            multiThreadForward.isVisible = isForwarding
-            icmpEchoStrategy.isVisible = isForwarding
-            icmpEchoReplyDelay.isVisible = isForwarding
-            if (isForwarding) {
-                icmpEchoReplyDelay.isEnabled = icmpEchoStrategy.value == "${PacketStrategy.REPLY}"
-            }
-            ipOtherStrategy.isVisible = isForwarding
-        }
-
-        updateVpnMode(DataStore.vpnMode)
-        vpnMode.setOnPreferenceChangeListener { _, newValue ->
-            updateVpnMode((newValue as String).toInt())
-            needReload()
-            true
-        }
-        icmpEchoStrategy.setOnPreferenceChangeListener { _, newValue ->
-            icmpEchoReplyDelay.isEnabled = newValue == "${PacketStrategy.REPLY}"
-            needReload()
-            true
-        }
-
         val providerTrojan = findPreference<SimpleMenuPreference>(Key.PROVIDER_TROJAN)!!
         val providerShadowsocksAEAD = findPreference<SimpleMenuPreference>(Key.PROVIDER_SS_AEAD)!!
+        val providerShadowsocksStream = findPreference<SimpleMenuPreference>(Key.PROVIDER_SS_STREAM)!!
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
+            providerShadowsocksAEAD.setEntries(R.array.ss_aead_provider_api21)
+            providerShadowsocksAEAD.setEntryValues(R.array.ss_aead_provider_api21_values)
+            providerShadowsocksStream.setEntries(R.array.ss_stream_provider_api21)
+            providerShadowsocksStream.setEntryValues(R.array.ss_stream_provider_api21_values)
+        }
 
         if (!isExpert) {
             providerTrojan.setEntries(R.array.trojan_provider)
@@ -212,7 +185,6 @@ class SettingsPreferenceFragment : PreferenceFragmentCompat() {
         muxConcurrency.setOnBindEditTextListener(EditTextPreferenceModifiers.Port)
         portSocks5.setOnBindEditTextListener(EditTextPreferenceModifiers.Port)
         portHttp.setOnBindEditTextListener(EditTextPreferenceModifiers.Port)
-        apiPort.setOnBindEditTextListener(EditTextPreferenceModifiers.Port)
         dnsHosts.setOnBindEditTextListener(EditTextPreferenceModifiers.Hosts)
 
         val metedNetwork = findPreference<Preference>(Key.METERED_NETWORK)!!
@@ -226,7 +198,24 @@ class SettingsPreferenceFragment : PreferenceFragmentCompat() {
             newValue
         }
 
-        serviceMode.onPreferenceChangeListener = reloadListener
+        val appTrafficStatistics = findPreference<SwitchPreference>(Key.APP_TRAFFIC_STATISTICS)!!
+        val profileTrafficStatistics = findPreference<SwitchPreference>(Key.PROFILE_TRAFFIC_STATISTICS)!!
+        speedInterval.isEnabled = profileTrafficStatistics.isChecked
+        profileTrafficStatistics.setOnPreferenceChangeListener { _, newValue ->
+            speedInterval.isEnabled = newValue as Boolean
+            true
+        }
+
+        serviceMode.setOnPreferenceChangeListener { _, _ ->
+            if (SagerNet.started) SagerNet.stopService()
+            true
+        }
+
+        val tunImplementation = findPreference<SimpleMenuPreference>(Key.TUN_IMPLEMENTATION)!!
+        val destinationOverride = findPreference<SwitchPreference>(Key.DESTINATION_OVERRIDE)!!
+        val resolveDestination = findPreference<SwitchPreference>(Key.RESOLVE_DESTINATION)!!
+        val enablePcap = findPreference<SwitchPreference>(Key.ENABLE_PCAP)!!
+
         speedInterval.onPreferenceChangeListener = reloadListener
         portSocks5.onPreferenceChangeListener = reloadListener
         portHttp.onPreferenceChangeListener = reloadListener
@@ -234,7 +223,6 @@ class SettingsPreferenceFragment : PreferenceFragmentCompat() {
         showStopButton.onPreferenceChangeListener = reloadListener
         showDirectSpeed.onPreferenceChangeListener = reloadListener
         domainStrategy.onPreferenceChangeListener = reloadListener
-        domainMatcher.onPreferenceChangeListener = reloadListener
         trafficSniffing.onPreferenceChangeListener = reloadListener
         enableMux.onPreferenceChangeListener = reloadListener
         enableMuxForAll.onPreferenceChangeListener = reloadListener
@@ -257,16 +245,36 @@ class SettingsPreferenceFragment : PreferenceFragmentCompat() {
 
         enableLog.onPreferenceChangeListener = reloadListener
 
-        probeIndival.setOnBindEditTextListener(EditTextPreferenceModifiers.Number)
-        probeIndival.onPreferenceChangeListener = reloadListener
-
-        multiThreadForward.onPreferenceChangeListener = reloadListener
-        icmpEchoReplyDelay.onPreferenceChangeListener = reloadListener
-        icmpEchoReplyDelay.setOnBindEditTextListener(EditTextPreferenceModifiers.Number)
-        ipOtherStrategy.onPreferenceChangeListener = reloadListener
+        probeInterval.setOnBindEditTextListener(EditTextPreferenceModifiers.Number)
+        probeInterval.onPreferenceChangeListener = reloadListener
 
         providerTrojan.onPreferenceChangeListener = reloadListener
         providerShadowsocksAEAD.onPreferenceChangeListener = reloadListener
+        providerShadowsocksStream.onPreferenceChangeListener = reloadListener
+        appTrafficStatistics.onPreferenceChangeListener = reloadListener
+        tunImplementation.onPreferenceChangeListener = reloadListener
+        destinationOverride.onPreferenceChangeListener = reloadListener
+        resolveDestination.onPreferenceChangeListener = reloadListener
+        enablePcap.setOnPreferenceChangeListener { _, newValue ->
+            if (newValue as Boolean) {
+                val path = File(app.externalAssets, "pcap").absolutePath
+                MaterialAlertDialogBuilder(requireContext()).apply {
+                    setTitle(R.string.pcap)
+                    setMessage(resources.getString(R.string.pcap_notice, path))
+                    setPositiveButton(android.R.string.ok) { _, _ ->
+                        needReload()
+                    }
+                    setNegativeButton(android.R.string.copy) { _, _ ->
+                        SagerNet.trySetPrimaryClip(path)
+                        snackbar(R.string.copy_success).show()
+                    }
+                }.show()
+                if (tunImplementation.value != "${TunImplementation.GVISOR}") {
+                    tunImplementation.value = "${TunImplementation.GVISOR}"
+                }
+            } else needReload()
+            true
+        }
 
     }
 

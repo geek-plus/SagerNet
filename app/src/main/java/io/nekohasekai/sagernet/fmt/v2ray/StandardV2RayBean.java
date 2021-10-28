@@ -1,8 +1,6 @@
 /******************************************************************************
  *                                                                            *
- * Copyright (C) 2021 by nekohasekai <sekai@neko.services>                    *
- * Copyright (C) 2021 by Max Lv <max.c.lv@gmail.com>                          *
- * Copyright (C) 2021 by Mygod Studio <contact-shadowsocks-android@mygod.be>  *
+ * Copyright (C) 2021 by nekohasekai <contact-sagernet@sekai.icu>             *
  *                                                                            *
  * This program is free software: you can redistribute it and/or modify       *
  * it under the terms of the GNU General Public License as published by       *
@@ -193,7 +191,7 @@ public abstract class StandardV2RayBean extends AbstractBean {
 
     @Override
     public void serialize(ByteBufferOutput output) {
-        output.writeInt(3);
+        output.writeInt(5);
         super.serialize(output);
 
         output.writeString(uuid);
@@ -246,6 +244,12 @@ public abstract class StandardV2RayBean extends AbstractBean {
                 output.writeBoolean(allowInsecure);
                 break;
             }
+        }
+
+        if (this instanceof VMessBean) {
+            output.writeInt(((VMessBean) this).alterId);
+            output.writeBoolean(((VMessBean) this).experimentalAuthenticatedLength);
+            output.writeBoolean(((VMessBean) this).experimentalNoTerminationSignal);
         }
     }
 
@@ -308,6 +312,13 @@ public abstract class StandardV2RayBean extends AbstractBean {
                 }
                 break;
             }
+        }
+        if (this instanceof VMessBean && version != 4) {
+            ((VMessBean) this).alterId = input.readInt();
+        }
+        if (this instanceof VMessBean && version >= 4) {
+            ((VMessBean) this).experimentalAuthenticatedLength = input.readBoolean();
+            ((VMessBean) this).experimentalNoTerminationSignal = input.readBoolean();
         }
     }
 

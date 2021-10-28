@@ -1,8 +1,6 @@
 /******************************************************************************
  *                                                                            *
- * Copyright (C) 2021 by nekohasekai <sekai@neko.services>                    *
- * Copyright (C) 2021 by Max Lv <max.c.lv@gmail.com>                          *
- * Copyright (C) 2021 by Mygod Studio <contact-shadowsocks-android@mygod.be>  *
+ * Copyright (C) 2021 by nekohasekai <contact-sagernet@sekai.icu>             *
  *                                                                            *
  * This program is free software: you can redistribute it and/or modify       *
  * it under the terms of the GNU General Public License as published by       *
@@ -23,14 +21,13 @@ package io.nekohasekai.sagernet.ktx
 
 import androidx.annotation.RawRes
 import cn.hutool.core.lang.Validator
-import cn.hutool.core.net.NetUtil
+import cn.hutool.core.net.NetUtil.isInnerIP
 import cn.hutool.json.JSONObject
 import com.github.shadowsocks.plugin.PluginConfiguration
 import io.nekohasekai.sagernet.R
-import io.nekohasekai.sagernet.database.ProfileManager
 import io.nekohasekai.sagernet.fmt.AbstractBean
-import io.nekohasekai.sagernet.fmt.internal.ConfigBean
 import io.nekohasekai.sagernet.fmt.http.HttpBean
+import io.nekohasekai.sagernet.fmt.internal.ConfigBean
 import io.nekohasekai.sagernet.fmt.shadowsocks.ShadowsocksBean
 import io.nekohasekai.sagernet.fmt.shadowsocksr.ShadowsocksRBean
 import io.nekohasekai.sagernet.fmt.socks.SOCKSBean
@@ -44,11 +41,11 @@ object ResultLocal : ValidateResult
 class ResultDeprecated(@RawRes val textRes: Int) : ValidateResult
 class ResultInsecure(@RawRes val textRes: Int) : ValidateResult
 
-private val ssSecureList = "(gcm|poly1305)".toRegex()
+val ssSecureList = "(gcm|poly1305)".toRegex()
 
 fun AbstractBean.isInsecure(): ValidateResult {
-    if (Validator.isIpv4(serverAddress) && NetUtil.isInnerIP(serverAddress) || serverAddress in arrayOf(
-            "localhost"
+    if (Validator.isIpv4(serverAddress) && isInnerIP(serverAddress) || serverAddress in arrayOf(
+            "localhost", "::"
         )
     ) {
         return ResultLocal

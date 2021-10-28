@@ -1,8 +1,6 @@
 /******************************************************************************
  *                                                                            *
- * Copyright (C) 2021 by nekohasekai <sekai@neko.services>                    *
- * Copyright (C) 2021 by Max Lv <max.c.lv@gmail.com>                          *
- * Copyright (C) 2021 by Mygod Studio <contact-shadowsocks-android@mygod.be>  *
+ * Copyright (C) 2021 by nekohasekai <contact-sagernet@sekai.icu>             *
  *                                                                            *
  * This program is free software: you can redistribute it and/or modify       *
  * it under the terms of the GNU General Public License as published by       *
@@ -24,7 +22,8 @@ package io.nekohasekai.sagernet.widget
 import android.content.Context
 import android.util.AttributeSet
 import com.takisoft.preferencex.EditTextPreference
-import io.nekohasekai.sagernet.BuildConfig
+import io.nekohasekai.sagernet.ktx.USER_AGENT
+import io.nekohasekai.sagernet.ktx.USER_AGENT_ORIGIN
 
 class UserAgentPreference : EditTextPreference {
 
@@ -38,9 +37,15 @@ class UserAgentPreference : EditTextPreference {
         context: Context?, attrs: AttributeSet?, defStyleAttr: Int, defStyleRes: Int
     ) : super(context, attrs, defStyleAttr, defStyleRes)
 
+    var isOOCv1 = false
+
+    public override fun notifyChanged() {
+        super.notifyChanged()
+    }
+
     override fun getSummary(): CharSequence {
         if (text.isNullOrBlank()) {
-            return "SagerNet/${BuildConfig.VERSION_NAME}"
+            return if (isOOCv1) USER_AGENT_ORIGIN else USER_AGENT
         }
         return super.getSummary()
     }

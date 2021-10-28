@@ -1,8 +1,6 @@
 /******************************************************************************
  *                                                                            *
- * Copyright (C) 2021 by nekohasekai <sekai@neko.services>                    *
- * Copyright (C) 2021 by Max Lv <max.c.lv@gmail.com>                          *
- * Copyright (C) 2021 by Mygod Studio <contact-shadowsocks-android@mygod.be>  *
+ * Copyright (C) 2021 by nekohasekai <contact-sagernet@sekai.icu>             *
  *                                                                            *
  * This program is free software: you can redistribute it and/or modify       *
  * it under the terms of the GNU General Public License as published by       *
@@ -22,6 +20,7 @@
 package io.nekohasekai.sagernet.fmt.shadowsocks
 
 import cn.hutool.core.codec.Base64
+import cn.hutool.json.JSONObject
 import com.github.shadowsocks.plugin.PluginConfiguration
 import com.github.shadowsocks.plugin.PluginManager
 import com.github.shadowsocks.plugin.PluginOptions
@@ -30,10 +29,90 @@ import io.nekohasekai.sagernet.database.DataStore
 import io.nekohasekai.sagernet.fmt.LOCALHOST
 import io.nekohasekai.sagernet.ktx.*
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
-import cn.hutool.json.JSONObject as HSONObject
 
 val methodsV2fly = arrayOf(
-    "none", "aes-128-gcm", "aes-256-gcm", "chacha20-ietf-poly1305"
+    "none", "aes-128-gcm", "aes-256-gcm", "chacha20-ietf-poly1305", "xchacha20-ietf-poly1305"
+)
+
+val methodsClash = arrayOf(
+    "none",
+    "aes-128-gcm",
+    "aes-192-gcm",
+    "aes-256-gcm",
+    "chacha20-ietf-poly1305",
+    "xchacha20-ietf-poly1305",
+    "rc4",
+    "rc4-md5",
+    "aes-128-ctr",
+    "aes-192-ctr",
+    "aes-256-ctr",
+    "aes-128-cfb",
+    "aes-192-cfb",
+    "aes-256-cfb",
+    "aes-128-cfb8",
+    "aes-192-cfb8",
+    "aes-256-cfb8",
+    "aes-128-ofb",
+    "aes-192-ofb",
+    "aes-256-ofb",
+    "bf-cfb",
+    "cast5-cfb",
+    "des-cfb",
+    "idea-cfb",
+    "rc2-cfb",
+    "seed-cfb",
+    "camellia-128-cfb",
+    "camellia-192-cfb",
+    "camellia-256-cfb",
+    "camellia-128-cfb8",
+    "camellia-192-cfb8",
+    "camellia-256-cfb8",
+    "salsa20",
+    "chacha20",
+    "chacha20-ietf",
+    "xchacha20",
+)
+
+val methodsSsRust = arrayOf(
+    "none",
+    "rc4-md5",
+    "aes-128-cfb",
+    "aes-192-cfb",
+    "aes-256-cfb",
+    "aes-128-ctr",
+    "aes-192-ctr",
+    "aes-256-ctr",
+    "bf-cfb",
+    "camellia-128-cfb",
+    "camellia-192-cfb",
+    "camellia-256-cfb",
+    "chacha20-ietf",
+    "aes-128-gcm",
+    "aes-256-gcm",
+    "chacha20-ietf-poly1305",
+    "xchacha20-ietf-poly1305",
+)
+
+val methodsSsLibev = arrayOf(
+    "rc4-md5",
+    "aes-128-gcm",
+    "aes-192-gcm",
+    "aes-256-gcm",
+    "aes-128-cfb",
+    "aes-192-cfb",
+    "aes-256-cfb",
+    "aes-128-ctr",
+    "aes-192-ctr",
+    "aes-256-ctr",
+    "camellia-128-cfb",
+    "camellia-192-cfb",
+    "camellia-256-cfb",
+    "bf-cfb",
+    "chacha20-ietf-poly1305",
+    "xchacha20-ietf-poly1305",
+    "salsa20",
+    "chacha20",
+    "chacha20-ietf"
 )
 
 fun PluginConfiguration.fixInvalidParams() {
@@ -90,7 +169,8 @@ fun parseShadowsocks(url: String): ShadowsocksBean {
 
         if (link.username.isBlank()) { // fix justmysocks's shit link
 
-            link = (("https://" + url.substringAfter("ss://").substringBefore("#")
+            link = (("https://" + url.substringAfter("ss://")
+                .substringBefore("#")
                 .decodeBase64UrlSafe()).toHttpUrlOrNull() ?: error(
                 "invalid jms link $url"
             )).newBuilder().fragment(url.substringAfter("#")).build()
@@ -138,9 +218,8 @@ fun parseShadowsocks(url: String): ShadowsocksBean {
 
         if (v2Url.contains("#")) v2Url = v2Url.substringBefore("#")
 
-        val link =
-            ("https://" + v2Url.substringAfter("ss://").decodeBase64UrlSafe()).toHttpUrlOrNull()
-                ?: error("invalid v2rayN link $url")
+        val link = ("https://" + v2Url.substringAfter("ss://")
+            .decodeBase64UrlSafe()).toHttpUrlOrNull() ?: error("invalid v2rayN link $url")
 
         return ShadowsocksBean().apply {
 
@@ -163,9 +242,9 @@ fun parseShadowsocks(url: String): ShadowsocksBean {
 
 fun ShadowsocksBean.toUri(): String {
 
-    val builder =
-        linkBuilder().username(Base64.encodeUrlSafe("$method:$password")).host(serverAddress)
-            .port(serverPort)
+    val builder = linkBuilder().username(Base64.encodeUrlSafe("$method:$password"))
+        .host(serverAddress)
+        .port(serverPort)
 
     if (plugin.isNotBlank()) {
         builder.addQueryParameter("plugin", plugin)
@@ -175,11 +254,11 @@ fun ShadowsocksBean.toUri(): String {
         builder.encodedFragment(name.urlSafe())
     }
 
-    return builder.toLink("ss")
+    return builder.toLink("ss").replace("$serverPort/", "$serverPort")
 
 }
 
-fun HSONObject.parseShadowsocks(): ShadowsocksBean {
+fun JSONObject.parseShadowsocks(): ShadowsocksBean {
     return ShadowsocksBean().apply {
         var pluginStr = ""
         val pId = getStr("plugin")
@@ -199,15 +278,9 @@ fun HSONObject.parseShadowsocks(): ShadowsocksBean {
     }
 }
 
-// https://github.com/shadowsocks/shadowsocks-android/blob/39f784a9d0cd191e9b8616b0b95bb2176b0fc798/core/src/main/java/com/github/shadowsocks/bg/ProxyInstance.kt#L58
-val deprecatedCiphers = arrayOf("aes-192-gcm", "chacha20", "salsa20")
 
 fun ShadowsocksBean.buildShadowsocksConfig(port: Int): String {
-    if (method in deprecatedCiphers) {
-        throw IllegalArgumentException("Cipher $method is deprecated.")
-    }
-
-    val proxyConfig = HSONObject().also {
+    val proxyConfig = JSONObject().also {
         it["server"] = finalAddress
         it["server_port"] = finalPort
         it["method"] = method

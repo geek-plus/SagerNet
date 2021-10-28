@@ -1,6 +1,6 @@
 /******************************************************************************
  *                                                                            *
- * Copyright (C) 2021 by nekohasekai <sekai@neko.services>                    *
+ * Copyright (C) 2021 by nekohasekai <contact-sagernet@sekai.icu>             *
  * Copyright (C) 2021 by Max Lv <max.c.lv@gmail.com>                          *
  * Copyright (C) 2021 by Mygod Studio <contact-shadowsocks-android@mygod.be>  *
  *                                                                            *
@@ -22,7 +22,6 @@
 package io.nekohasekai.sagernet.database.preference
 
 import androidx.preference.PreferenceDataStore
-import java.util.*
 
 @Suppress("MemberVisibilityCanBePrivate", "unused")
 open class RoomPreferenceDataStore(private val kvPairDao: KeyValuePair.Dao) :

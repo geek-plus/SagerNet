@@ -1,6 +1,6 @@
 /******************************************************************************
  *                                                                            *
- * Copyright (C) 2021 by nekohasekai <sekai@neko.services>                    *
+ * Copyright (C) 2021 by nekohasekai <contact-sagernet@sekai.icu>             *
  * Copyright (C) 2021 by Max Lv <max.c.lv@gmail.com>                          *
  * Copyright (C) 2021 by Mygod Studio <contact-shadowsocks-android@mygod.be>  *
  *                                                                            *
@@ -53,20 +53,56 @@ object DataStore : OnPreferenceDataStoreChangeListener {
         SagerNet.currentProfile?.groupId ?: 0L
     }
 
-    fun selectedGroupForImport(): Long {
+    fun currentGroupId(): Long {
+        val currentSelected = selectedGroup
+        if (currentSelected > 0L) return currentSelected
         val groups = SagerDatabase.groupDao.allGroups()
-        val sid = DataStore.selectedGroup
-        return (groups.find { it.id == sid && it.type == GroupType.BASIC }
-            ?: groups.find { it.ungrouped }!!).id
+        if (groups.isNotEmpty()) {
+            val groupId = groups[0].id
+            selectedGroup = groupId
+            return groupId
+        }
+        val groupId = SagerDatabase.groupDao.createGroup(ProxyGroup(ungrouped = true))
+        selectedGroup = groupId
+        return groupId
+    }
+
+    fun currentGroup(): ProxyGroup {
+        var group: ProxyGroup? = null
+        val currentSelected = selectedGroup
+        if (currentSelected > 0L) {
+            group = SagerDatabase.groupDao.getById(currentSelected)
+        }
+        if (group != null) return group
+        val groups = SagerDatabase.groupDao.allGroups()
+        if (groups.isEmpty()) {
+            group = ProxyGroup(ungrouped = true).apply {
+                id = SagerDatabase.groupDao.createGroup(this)
+            }
+        } else {
+            group = groups[0]
+        }
+        selectedGroup = group.id
+        return group
+    }
+
+    fun selectedGroupForImport(): Long {
+        val current = currentGroup()
+        if (current.type == GroupType.BASIC) return current.id
+        val groups = SagerDatabase.groupDao.allGroups()
+        return groups.find { it.type == GroupType.BASIC }!!.id
     }
 
     var appTheme by configurationStore.int(Key.APP_THEME)
     var nightTheme by configurationStore.stringToInt(Key.NIGHT_THEME)
     var serviceMode by configurationStore.string(Key.SERVICE_MODE) { Key.MODE_VPN }
 
-    var domainStrategy by configurationStore.string(Key.DOMAIN_STRATEGY) { "IPIfNonMatch" }
-    var domainMatcher by configurationStore.string(Key.DOMAIN_MATCHER) { "mph" }
+    var domainStrategy by configurationStore.string(Key.DOMAIN_STRATEGY) { "AsIs" }
     var trafficSniffing by configurationStore.boolean(Key.TRAFFIC_SNIFFING) { true }
+    var destinationOverride by configurationStore.boolean(Key.DESTINATION_OVERRIDE)
+    var resolveDestination by configurationStore.boolean(Key.RESOLVE_DESTINATION)
+
+
     var tcpKeepAliveInterval by configurationStore.stringToInt(Key.TCP_KEEP_ALIVE_INTERVAL) { 15 }
 
     var bypassLan by configurationStore.boolean(Key.BYPASS_LAN)
@@ -85,6 +121,7 @@ object DataStore : OnPreferenceDataStoreChangeListener {
     var securityAdvisory by configurationStore.boolean(Key.SECURITY_ADVISORY) { true }
     var rulesProvider by configurationStore.stringToInt(Key.RULES_PROVIDER)
     var enableLog by configurationStore.boolean(Key.ENABLE_LOG) { BuildConfig.DEBUG }
+    var enablePcap by configurationStore.boolean(Key.ENABLE_PCAP)
 
     // hopefully hashCode = mHandle doesn't change, currently this is true from KitKat to Nougat
     private val userIndex by lazy { Binder.getCallingUserHandle().hashCode() }
@@ -102,11 +139,6 @@ object DataStore : OnPreferenceDataStoreChangeListener {
     var transproxyPort: Int
         get() = getLocalPort(Key.TRANSPROXY_PORT, 9200)
         set(value) = saveLocalPort(Key.TRANSPROXY_PORT, value)
-    var apiPort: Int
-        get() = getLocalPort(Key.API_PORT, 9002)
-        set(value) {
-            saveLocalPort(Key.API_PORT, value)
-        }
 
     var probeInterval by configurationStore.stringToInt(Key.PROBE_INTERVAL) { 300 }
 
@@ -122,9 +154,6 @@ object DataStore : OnPreferenceDataStoreChangeListener {
         }
         if (configurationStore.getString(Key.TRANSPROXY_PORT) == null) {
             transproxyPort = transproxyPort
-        }
-        if (configurationStore.getString(Key.API_PORT) == null) {
-            apiPort = apiPort
         }
     }
 
@@ -160,16 +189,16 @@ object DataStore : OnPreferenceDataStoreChangeListener {
     var connectionTestURL by configurationStore.string(Key.CONNECTION_TEST_URL) { CONNECTION_TEST_URL }
     var alwaysShowAddress by configurationStore.boolean(Key.ALWAYS_SHOW_ADDRESS)
 
-    var vpnMode by configurationStore.stringToInt(Key.VPN_MODE) { VpnMode.EXPERIMENTAL_FORWARDING }
-    var multiThreadForward by configurationStore.boolean(Key.MULTI_THREAD_FORWARD)
-    var icmpEchoStrategy by configurationStore.stringToInt(Key.ICMP_ECHO_STRATEGY)
-    var icmpEchoReplyDelay by configurationStore.stringToLong(Key.ICMP_ECHO_REPLY_DELAY) { 50 }
-    var ipOtherStrategy by configurationStore.stringToInt(Key.IP_OTHER_STRATEGY) { PacketStrategy.DIRECT }
+    var tunImplementation by configurationStore.stringToInt(Key.TUN_IMPLEMENTATION) { TunImplementation.GVISOR }
+
+    var appTrafficStatistics by configurationStore.boolean(Key.APP_TRAFFIC_STATISTICS)
+    var profileTrafficStatistics by configurationStore.boolean(Key.PROFILE_TRAFFIC_STATISTICS) { true }
 
     // protocol
 
     var providerTrojan by configurationStore.stringToInt(Key.PROVIDER_TROJAN)
     var providerShadowsocksAEAD by configurationStore.stringToInt(Key.PROVIDER_SS_AEAD)
+    var providerShadowsocksStream by configurationStore.stringToInt(Key.PROVIDER_SS_STREAM)
 
     // cache
 
@@ -210,6 +239,20 @@ object DataStore : OnPreferenceDataStoreChangeListener {
     var serverHeaders by profileCacheStore.string(Key.SERVER_HEADERS)
     var serverAllowInsecure by profileCacheStore.boolean(Key.SERVER_ALLOW_INSECURE)
 
+    var serverVMessExperimentalAuthenticatedLength by profileCacheStore.boolean(Key.SERVER_VMESS_EXPERIMENTAL_AUTHENTICATED_LENGTH)
+    var serverVMessExperimentalNoTerminationSignal by profileCacheStore.boolean(Key.SERVER_VMESS_EXPERIMENTAL_NO_TERMINATION_SIGNAL)
+
+    var serverAuthType by profileCacheStore.stringToInt(Key.SERVER_AUTH_TYPE)
+    var serverUploadSpeed by profileCacheStore.stringToInt(Key.SERVER_UPLOAD_SPEED)
+    var serverDownloadSpeed by profileCacheStore.stringToInt(Key.SERVER_DOWNLOAD_SPEED)
+    var serverStreamReceiveWindow by profileCacheStore.stringToIntIfExists(Key.SERVER_STREAM_RECEIVE_WINDOW)
+    var serverConnectionReceiveWindow by profileCacheStore.stringToIntIfExists(Key.SERVER_CONNECTION_RECEIVE_WINDOW)
+    var serverDisableMtuDiscovery by profileCacheStore.boolean(Key.SERVER_DISABLE_MTU_DISCOVERY)
+
+    var serverProtocolVersion by profileCacheStore.stringToInt(Key.SERVER_PROTOCOL)
+    var serverPrivateKey by profileCacheStore.string(Key.SERVER_PRIVATE_KEY)
+    var serverLocalAddress by profileCacheStore.string(Key.SERVER_LOCAL_ADDRESS)
+
     var balancerType by profileCacheStore.stringToInt(Key.BALANCER_TYPE)
     var balancerGroup by profileCacheStore.stringToLong(Key.BALANCER_GROUP)
     var balancerStrategy by profileCacheStore.string(Key.BALANCER_STRATEGY)
@@ -228,10 +271,14 @@ object DataStore : OnPreferenceDataStoreChangeListener {
     var routeReverse by profileCacheStore.boolean(Key.ROUTE_REVERSE)
     var routeRedirect by profileCacheStore.string(Key.ROUTE_REDIRECT)
     var routePackages by profileCacheStore.string(Key.ROUTE_PACKAGES)
+    var routeForegroundStatus by profileCacheStore.string(Key.ROUTE_FOREGROUND_STATUS)
+
+
     var serverConfig by profileCacheStore.string(Key.SERVER_CONFIG)
 
     var groupName by profileCacheStore.string(Key.GROUP_NAME)
     var groupType by profileCacheStore.stringToInt(Key.GROUP_TYPE)
+    var groupOrder by profileCacheStore.stringToInt(Key.GROUP_ORDER)
 
     var subscriptionType by profileCacheStore.stringToInt(Key.SUBSCRIPTION_TYPE)
     var subscriptionLink by profileCacheStore.string(Key.SUBSCRIPTION_LINK)
@@ -242,7 +289,7 @@ object DataStore : OnPreferenceDataStoreChangeListener {
     var subscriptionUpdateWhenConnectedOnly by profileCacheStore.boolean(Key.SUBSCRIPTION_UPDATE_WHEN_CONNECTED_ONLY)
     var subscriptionUserAgent by profileCacheStore.string(Key.SUBSCRIPTION_USER_AGENT)
     var subscriptionAutoUpdate by profileCacheStore.boolean(Key.SUBSCRIPTION_AUTO_UPDATE)
-    var subscriptionAutoUpdateDelay by profileCacheStore.stringToInt(Key.SUBSCRIPTION_AUTO_UPDATE_DELAY) { 1440 }
+    var subscriptionAutoUpdateDelay by profileCacheStore.stringToInt(Key.SUBSCRIPTION_AUTO_UPDATE_DELAY) { 360 }
 
     var rulesFirstCreate by profileCacheStore.boolean("rulesFirstCreate")
     var systemDnsFinal by profileCacheStore.string("systemDnsFinal")

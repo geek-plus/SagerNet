@@ -1,8 +1,6 @@
 /******************************************************************************
  *                                                                            *
- * Copyright (C) 2021 by nekohasekai <sekai@neko.services>                    *
- * Copyright (C) 2021 by Max Lv <max.c.lv@gmail.com>                          *
- * Copyright (C) 2021 by Mygod Studio <contact-shadowsocks-android@mygod.be>  *
+ * Copyright (C) 2021 by nekohasekai <contact-sagernet@sekai.icu>             *
  *                                                                            *
  * This program is free software: you can redistribute it and/or modify       *
  * it under the terms of the GNU General Public License as published by       *
@@ -27,6 +25,7 @@ import com.google.gson.annotations.SerializedName;
 import com.google.gson.stream.JsonToken;
 
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
@@ -71,6 +70,7 @@ public class V2RayConfig {
             public Boolean skipFallback;
             public List<String> domains;
             public List<String> expectIPs;
+            public Boolean concurrent;
 
         }
 
@@ -86,6 +86,9 @@ public class V2RayConfig {
         public List<String> domains;
         public List<String> expectIPs;
         public String queryStrategy;
+
+        public Boolean disableFallback;
+        public Boolean disableFallbackIfMatch;
 
     }
 
@@ -112,6 +115,11 @@ public class V2RayConfig {
             public String attrs;
             public String outboundTag;
             public String balancerTag;
+
+            // SagerNet private
+
+            public List<Integer> uidList;
+            public List<String> appStatus;
 
         }
 
@@ -188,6 +196,7 @@ public class V2RayConfig {
             public Boolean enabled;
             public List<String> destOverride;
             public Boolean metadataOnly;
+            public Boolean routeOnly;
 
         }
 
@@ -220,7 +229,7 @@ public class V2RayConfig {
         @Nullable
         @Override
         protected Class<? extends InboundConfigurationObject> getType() {
-            switch (ctx.protocol.toLowerCase()) {
+            switch (ctx.protocol.toLowerCase(Locale.ROOT)) {
                 case "dokodemo-door":
                     return DokodemoDoorInboundConfigurationObject.class;
                 case "http":
@@ -393,6 +402,8 @@ public class V2RayConfig {
         public StreamSettingsObject streamSettings;
         public ProxySettingsObject proxySettings;
         public MuxObject mux;
+        public String domainStrategy;
+        public Long fallbackDelayMs;
 
         public void init() {
             if (settings != null) {
@@ -435,7 +446,7 @@ public class V2RayConfig {
         @Nullable
         @Override
         protected Class<? extends OutboundConfigurationObject> getType() {
-            switch (ctx.protocol.toLowerCase()) {
+            switch (ctx.protocol.toLowerCase(Locale.ROOT)) {
                 case "blackhole":
                     return BlackholeOutboundConfigurationObject.class;
                 case "dns":
@@ -467,6 +478,8 @@ public class V2RayConfig {
     public static class BlackholeOutboundConfigurationObject implements OutboundConfigurationObject {
 
         public ResponseObject response;
+        public Boolean keepConnection;
+        public Integer userLevel;
 
         public static class ResponseObject {
             public String type;
@@ -479,6 +492,9 @@ public class V2RayConfig {
         public String network;
         public String address;
         public Integer port;
+
+        // SagerNet private
+        public Integer userLevel;
 
     }
 
@@ -508,6 +524,7 @@ public class V2RayConfig {
     public static class SocksOutboundConfigurationObject implements OutboundConfigurationObject {
 
         public List<ServerObject> servers;
+        public String version;
 
         public static class ServerObject {
 
@@ -543,6 +560,7 @@ public class V2RayConfig {
                 public Integer alterId;
                 public String security;
                 public Integer level;
+                public String experimental;
 
             }
 
@@ -823,6 +841,7 @@ public class V2RayConfig {
         public Set<String> subjectSelector;
         public String probeUrl;
         public String probeInterval;
+        public Boolean enableConcurrency;
     }
 
     public void init() {

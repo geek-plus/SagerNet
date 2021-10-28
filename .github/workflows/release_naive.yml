@@ -49,7 +49,7 @@ jobs:
         if: steps.cache.outputs.cache-hit != 'true'
         with:
           path: ~/.gradle
-          key: native-${{ hashFiles('**/*.gradle') }}
+          key: native-${{ hashFiles('**/*.gradle.kts') }}
       - name: Native Build
         if: steps.cache.outputs.cache-hit != 'true'
         run: |
@@ -105,10 +105,11 @@ jobs:
         uses: actions/cache@v2
         with:
           path: ~/.gradle
-          key: native-${{ hashFiles('**/*.gradle') }}
+          key: native-${{ hashFiles('**/*.gradle.kts') }}
       - name: Native Build
         env:
           SKIP_BUILD: on
+          BUILD_PLUGIN: naive
         run: |
           echo "sdk.dir=${ANDROID_HOME}" > local.properties
           echo "ndk.dir=${ANDROID_HOME}/ndk/21.4.7075529" >> local.properties
@@ -192,7 +193,7 @@ jobs:
           upload apks/*
   play:
     name: Publish to Play Store
-    if: github.event.inputs.upload != 'y'
+    if: github.event.inputs.play != 'y'
     runs-on: ubuntu-latest
     needs:
       - native
@@ -230,10 +231,11 @@ jobs:
         uses: actions/cache@v2
         with:
           path: ~/.gradle
-          key: native-${{ hashFiles('**/*.gradle') }}
+          key: native-${{ hashFiles('**/*.gradle.kts') }}
       - name: Native Build
         env:
           SKIP_BUILD: on
+          BUILD_PLUGIN: naive
         run: |
           echo "sdk.dir=${ANDROID_HOME}" > local.properties
           echo "ndk.dir=${ANDROID_HOME}/ndk/21.4.7075529" >> local.properties

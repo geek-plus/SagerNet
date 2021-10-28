@@ -1,8 +1,6 @@
 /******************************************************************************
  *                                                                            *
- * Copyright (C) 2021 by nekohasekai <sekai@neko.services>                    *
- * Copyright (C) 2021 by Max Lv <max.c.lv@gmail.com>                          *
- * Copyright (C) 2021 by Mygod Studio <contact-shadowsocks-android@mygod.be>  *
+ * Copyright (C) 2021 by nekohasekai <contact-sagernet@sekai.icu>             *
  *                                                                            *
  * This program is free software: you can redistribute it and/or modify       *
  * it under the terms of the GNU General Public License as published by       *
@@ -30,7 +28,6 @@ import org.jetbrains.annotations.NotNull;
 
 import io.nekohasekai.sagernet.fmt.AbstractBean;
 import io.nekohasekai.sagernet.fmt.KryoConverters;
-import io.nekohasekai.sagernet.fmt.brook.BrookBean;
 
 public class NaiveBean extends AbstractBean {
 
@@ -44,9 +41,7 @@ public class NaiveBean extends AbstractBean {
 
     @Override
     public void initializeDefaultValues() {
-        if (serverPort == 0) {
-            serverPort = 443;
-        }
+        if (serverPort == null) serverPort = 443;
         super.initializeDefaultValues();
         if (proto == null) proto = "https";
         if (username == null) username = "";

@@ -5,6 +5,7 @@
       <w>aead</w>
       <w>alpn</w>
       <w>blackhole</w>
+      <w>conns</w>
       <w>conscrypt</w>
       <w>dokodemo</w>
       <w>downlink</w>
@@ -14,6 +15,7 @@
       <w>geosite</w>
       <w>grpc</w>
       <w>gson</w>
+      <w>gvisor</w>
       <w>libev</w>
       <w>libnaive</w>
       <w>libtrojan</w>
@@ -36,6 +38,7 @@
       <w>tproxy</w>
       <w>transproxy</w>
       <w>uplink</w>
+      <w>utls</w>
       <w>vless</w>
       <w>vmess</w>
       <w>websocket</w>

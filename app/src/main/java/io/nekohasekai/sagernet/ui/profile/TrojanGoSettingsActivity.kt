@@ -1,8 +1,6 @@
 /******************************************************************************
  *                                                                            *
- * Copyright (C) 2021 by nekohasekai <sekai@neko.services>                    *
- * Copyright (C) 2021 by Max Lv <max.c.lv@gmail.com>                          *
- * Copyright (C) 2021 by Mygod Studio <contact-shadowsocks-android@mygod.be>  *
+ * Copyright (C) 2021 by nekohasekai <contact-sagernet@sekai.icu>             *
  *                                                                            *
  * This program is free software: you can redistribute it and/or modify       *
  * it under the terms of the GNU General Public License as published by       *
@@ -161,7 +159,7 @@ class TrojanGoSettingsActivity : ProfileSettingsActivity<TrojanGoBean>(),
         pluginConfigure = findPreference(Key.SERVER_PLUGIN_CONFIGURE)!!
         pluginConfigure.setOnBindEditTextListener(EditTextPreferenceModifiers.Monospace)
         pluginConfigure.onPreferenceChangeListener = this@TrojanGoSettingsActivity
-        pluginConfiguration = PluginConfiguration(DataStore.serverPlugin ?: "")
+        pluginConfiguration = PluginConfiguration(DataStore.serverPlugin)
         initPlugins()
     }
 
@@ -226,7 +224,7 @@ class TrojanGoSettingsActivity : ProfileSettingsActivity<TrojanGoBean>(),
 
     private fun initPlugins() {
         plugin.value = pluginConfiguration.selected
-        plugin.init()
+        plugin.init(true)
         pluginConfigure.isEnabled = plugin.selectedEntry?.let { it is NoPlugin } == false
         pluginConfigure.text = pluginConfiguration.getOptions().toString()
     }

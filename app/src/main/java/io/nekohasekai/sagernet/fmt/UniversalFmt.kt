@@ -1,8 +1,6 @@
 /******************************************************************************
  *                                                                            *
- * Copyright (C) 2021 by nekohasekai <sekai@neko.services>                    *
- * Copyright (C) 2021 by Max Lv <max.c.lv@gmail.com>                          *
- * Copyright (C) 2021 by Mygod Studio <contact-shadowsocks-android@mygod.be>  *
+ * Copyright (C) 2021 by nekohasekai <contact-sagernet@sekai.icu>             *
  *                                                                            *
  * This program is free software: you can redistribute it and/or modify       *
  * it under the terms of the GNU General Public License as published by       *
@@ -26,7 +24,6 @@ import cn.hutool.core.codec.Base64Encoder
 import cn.hutool.core.util.ZipUtil
 import io.nekohasekai.sagernet.database.ProxyEntity
 import io.nekohasekai.sagernet.database.ProxyGroup
-import io.nekohasekai.sagernet.ktx.marshall
 
 fun parseUniversal(link: String): AbstractBean {
     return if (link.contains("?")) {
@@ -53,6 +50,8 @@ fun AbstractBean.toUniversalLink(): String {
 
 fun ProxyGroup.toUniversalLink(): String {
     var link = "sn://subscription?"
+    export = true
     link += Base64Encoder.encodeUrlSafe(ZipUtil.zlib(KryoConverters.serialize(this), 9))
+    export = false
     return link
 }

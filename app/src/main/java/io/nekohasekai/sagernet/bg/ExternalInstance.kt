@@ -1,8 +1,6 @@
 /******************************************************************************
  *                                                                            *
- * Copyright (C) 2021 by nekohasekai <sekai@neko.services>                    *
- * Copyright (C) 2021 by Max Lv <max.c.lv@gmail.com>                          *
- * Copyright (C) 2021 by Mygod Studio <contact-shadowsocks-android@mygod.be>  *
+ * Copyright (C) 2021 by nekohasekai <contact-sagernet@sekai.icu>             *
  *                                                                            *
  * This program is free software: you can redistribute it and/or modify       *
  * it under the terms of the GNU General Public License as published by       *
@@ -21,10 +19,24 @@
 
 package io.nekohasekai.sagernet.bg
 
+import io.nekohasekai.sagernet.bg.proto.V2RayInstance
 import io.nekohasekai.sagernet.database.ProxyEntity
 import io.nekohasekai.sagernet.fmt.buildCustomConfig
+import io.nekohasekai.sagernet.ktx.Logs
 
-class ExternalInstance(profile: ProxyEntity, val port: Int) : V2RayInstance(profile) {
+class ExternalInstance(
+    profile: ProxyEntity, val port: Int
+) : V2RayInstance(profile) {
+
+    override fun init() {
+        super.init()
+
+        Logs.d(config.config)
+        pluginConfigs.forEach { (_, plugin) ->
+            val (_, content) = plugin
+            Logs.d(content)
+        }
+    }
 
     override fun buildConfig() {
         config = buildCustomConfig(profile, port)

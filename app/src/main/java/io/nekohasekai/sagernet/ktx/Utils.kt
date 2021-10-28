@@ -1,8 +1,6 @@
 /******************************************************************************
  *                                                                            *
- * Copyright (C) 2021 by nekohasekai <sekai@neko.services>                    *
- * Copyright (C) 2021 by Max Lv <max.c.lv@gmail.com>                          *
- * Copyright (C) 2021 by Mygod Studio <contact-shadowsocks-android@mygod.be>  *
+ * Copyright (C) 2021 by nekohasekai <contact-sagernet@sekai.icu>             *
  *                                                                            *
  * This program is free software: you can redistribute it and/or modify       *
  * it under the terms of the GNU General Public License as published by       *
@@ -26,6 +24,7 @@ package io.nekohasekai.sagernet.ktx
 import android.animation.Animator
 import android.animation.AnimatorListenerAdapter
 import android.annotation.SuppressLint
+import android.app.Service
 import android.content.*
 import android.content.pm.PackageInfo
 import android.content.res.Resources
@@ -58,6 +57,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
+import sun.misc.Unsafe
 import java.io.FileDescriptor
 import java.net.HttpURLConnection
 import java.net.InetAddress
@@ -69,6 +69,7 @@ import java.util.concurrent.atomic.AtomicReference
 import kotlin.coroutines.Continuation
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
+import kotlin.reflect.KClass
 import kotlin.reflect.KMutableProperty0
 import kotlin.reflect.KProperty
 import kotlin.reflect.KProperty0
@@ -240,6 +241,7 @@ fun View.crossFadeFrom(other: View) {
 }
 
 
+fun Fragment.snackbar(textId: Int) = (requireActivity() as MainActivity).snackbar(textId)
 fun Fragment.snackbar(text: CharSequence) = (requireActivity() as MainActivity).snackbar(text)
 
 fun ThemedActivity.startFilesForResult(
@@ -264,17 +266,28 @@ fun Fragment.startFilesForResult(
     (requireActivity() as ThemedActivity).snackbar(getString(R.string.file_manager_missing)).show()
 }
 
-fun Fragment.serviceStarted(): Boolean {
-    return ((activity as? MainActivity) ?: return false).state.canStop
-}
-
 fun Fragment.needReload() {
-    if (serviceStarted()) {
+    if (SagerNet.started) {
         snackbar(getString(R.string.restart)).setAction(R.string.apply) {
             SagerNet.reloadService()
         }.show()
     }
 }
+
+@Suppress("DEPRECATION")
+fun <T : Service> KClass<T>.isRunning(): Boolean {
+    val name = qualifiedName
+    var myServices = SagerNet.activity.getRunningServices(5) ?: return false
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+        val myUid = Os.getuid()
+        myServices = myServices.filter { it.uid == myUid }
+    }
+    for (myService in myServices) if (myService.service.className == name) {
+        return true
+    }
+    return false
+}
+
 
 fun Context.getColour(@ColorRes colorRes: Int): Int {
     return ContextCompat.getColor(this, colorRes)
@@ -288,8 +301,6 @@ fun Context.getColorAttr(@AttrRes resId: Int): Int {
 
 const val isDefaultFlavor = BuildConfig.FLAVOR == "oss"
 const val isExpert = BuildConfig.FLAVOR == "expert"
-
-const val USE_STATS_SERVICE = false
 
 val LAUNCH_DELAY = System.currentTimeMillis() - SystemClock.elapsedRealtime()
 
@@ -325,10 +336,13 @@ fun <T> Continuation<T>.tryResumeWithException(exception: Throwable) {
 }
 
 operator fun <F> KProperty0<F>.getValue(thisRef: Any?, property: KProperty<*>): F = get()
-operator fun <F> KMutableProperty0<F>.setValue(thisRef: Any?, property: KProperty<*>, value: F) = set(value)
+operator fun <F> KMutableProperty0<F>.setValue(
+    thisRef: Any?, property: KProperty<*>, value: F
+) = set(value)
 
 operator fun AtomicBoolean.getValue(thisRef: Any?, property: KProperty<*>): Boolean = get()
-operator fun AtomicBoolean.setValue(thisRef: Any?, property: KProperty<*>, value: Boolean) = set(value)
+operator fun AtomicBoolean.setValue(thisRef: Any?, property: KProperty<*>, value: Boolean) =
+    set(value)
 
 operator fun AtomicInteger.getValue(thisRef: Any?, property: KProperty<*>): Int = get()
 operator fun AtomicInteger.setValue(thisRef: Any?, property: KProperty<*>, value: Int) = set(value)
@@ -337,7 +351,8 @@ operator fun AtomicLong.getValue(thisRef: Any?, property: KProperty<*>): Long = 
 operator fun AtomicLong.setValue(thisRef: Any?, property: KProperty<*>, value: Long) = set(value)
 
 operator fun <T> AtomicReference<T>.getValue(thisRef: Any?, property: KProperty<*>): T = get()
-operator fun <T> AtomicReference<T>.setValue(thisRef: Any?, property: KProperty<*>, value: T) = set(value)
+operator fun <T> AtomicReference<T>.setValue(thisRef: Any?, property: KProperty<*>, value: T) =
+    set(value)
 
 operator fun <K, V> Map<K, V>.getValue(thisRef: K, property: KProperty<*>) = get(thisRef)
 operator fun <K, V> MutableMap<K, V>.setValue(thisRef: K, property: KProperty<*>, value: V?) {
@@ -352,4 +367,11 @@ operator fun <K, V> MutableMap<K, V>.setValue(thisRef: K, property: KProperty<*>
 
     }
 
+}
+
+@SuppressLint("DiscouragedPrivateApi")
+val UNSAFE = try {
+    Unsafe::class.java.getDeclaredMethod("getUnsafe").invoke(null) as Unsafe?
+} catch (e: Throwable) {
+    null
 }

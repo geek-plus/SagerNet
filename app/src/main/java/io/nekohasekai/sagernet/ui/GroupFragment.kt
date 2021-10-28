@@ -1,8 +1,6 @@
 /******************************************************************************
  *                                                                            *
- * Copyright (C) 2021 by nekohasekai <sekai@neko.services>                    *
- * Copyright (C) 2021 by Max Lv <max.c.lv@gmail.com>                          *
- * Copyright (C) 2021 by Mygod Studio <contact-shadowsocks-android@mygod.be>  *
+ * Copyright (C) 2021 by nekohasekai <contact-sagernet@sekai.icu>             *
  *                                                                            *
  * This program is free software: you can redistribute it and/or modify       *
  * it under the terms of the GNU General Public License as published by       *
@@ -39,7 +37,6 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import io.nekohasekai.sagernet.GroupType
 import io.nekohasekai.sagernet.R
 import io.nekohasekai.sagernet.SagerNet
-import io.nekohasekai.sagernet.database.DataStore
 import io.nekohasekai.sagernet.database.GroupManager
 import io.nekohasekai.sagernet.database.ProxyGroup
 import io.nekohasekai.sagernet.database.SagerDatabase
@@ -134,7 +131,7 @@ class GroupFragment : ToolbarFragment(R.layout.layout_group),
         registerForActivityResult(ActivityResultContracts.CreateDocument()) { data ->
             if (data != null) {
                 runOnDefaultDispatcher {
-                    val profiles = SagerDatabase.proxyDao.getByGroup(DataStore.selectedGroup)
+                    val profiles = SagerDatabase.proxyDao.getByGroup(selectedGroup.id)
                     val links = profiles.mapNotNull { it.toLink() }.joinToString("\n")
                     try {
                         (requireActivity() as MainActivity).contentResolver.openOutputStream(
@@ -176,6 +173,8 @@ class GroupFragment : ToolbarFragment(R.layout.layout_group),
         }
 
         init {
+            setHasStableIds(true)
+
             runOnDefaultDispatcher {
                 reload()
             }
@@ -351,8 +350,8 @@ class GroupFragment : ToolbarFragment(R.layout.layout_group),
                     runOnDefaultDispatcher {
                         val profiles = SagerDatabase.proxyDao.getByGroup(selectedGroup.id)
                         val links = profiles.mapNotNull { it.toLink() }.joinToString("\n")
-                        SagerNet.trySetPrimaryClip(links)
                         onMainDispatcher {
+                            SagerNet.trySetPrimaryClip(links)
                             snackbar(getString(R.string.copy_toast_msg)).show()
                         }
                     }
@@ -397,7 +396,7 @@ class GroupFragment : ToolbarFragment(R.layout.layout_group),
             }
 
             runOnDefaultDispatcher {
-                val showMenu = SagerDatabase.proxyDao.countByGroup(proxyGroup.id) > 0
+                val showMenu = SagerDatabase.proxyDao.countByGroup(group.id) > 0
                 onMainDispatcher {
                     optionsButton.isVisible = showMenu
                 }
@@ -471,9 +470,9 @@ class GroupFragment : ToolbarFragment(R.layout.layout_group),
             groupUser.text = subscription?.username ?: ""
 
             runOnDefaultDispatcher {
-                val size = SagerDatabase.proxyDao.countByGroup(proxyGroup.id)
+                val size = SagerDatabase.proxyDao.countByGroup(group.id)
                 onMainDispatcher {
-                    @Suppress("DEPRECATION") when (proxyGroup.type) {
+                    @Suppress("DEPRECATION") when (group.type) {
                         GroupType.BASIC -> {
                             if (size == 0L) {
                                 groupStatus.setText(R.string.group_status_empty)

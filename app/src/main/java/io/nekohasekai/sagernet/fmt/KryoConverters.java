@@ -1,8 +1,6 @@
 /******************************************************************************
  *                                                                            *
- * Copyright (C) 2021 by nekohasekai <sekai@neko.services>                    *
- * Copyright (C) 2021 by Max Lv <max.c.lv@gmail.com>                          *
- * Copyright (C) 2021 by Mygod Studio <contact-shadowsocks-android@mygod.be>  *
+ * Copyright (C) 2021 by nekohasekai <contact-sagernet@sekai.icu>             *
  *                                                                            *
  * This program is free software: you can redistribute it and/or modify       *
  * it under the terms of the GNU General Public License as published by       *
@@ -23,6 +21,7 @@ package io.nekohasekai.sagernet.fmt;
 
 import androidx.room.TypeConverter;
 
+import com.esotericsoftware.kryo.KryoException;
 import com.esotericsoftware.kryo.io.ByteBufferInput;
 import com.esotericsoftware.kryo.io.ByteBufferOutput;
 
@@ -34,6 +33,7 @@ import cn.hutool.core.util.ArrayUtil;
 import io.nekohasekai.sagernet.database.SubscriptionBean;
 import io.nekohasekai.sagernet.fmt.brook.BrookBean;
 import io.nekohasekai.sagernet.fmt.http.HttpBean;
+import io.nekohasekai.sagernet.fmt.hysteria.HysteriaBean;
 import io.nekohasekai.sagernet.fmt.internal.BalancerBean;
 import io.nekohasekai.sagernet.fmt.internal.ChainBean;
 import io.nekohasekai.sagernet.fmt.internal.ConfigBean;
@@ -42,12 +42,16 @@ import io.nekohasekai.sagernet.fmt.pingtunnel.PingTunnelBean;
 import io.nekohasekai.sagernet.fmt.relaybaton.RelayBatonBean;
 import io.nekohasekai.sagernet.fmt.shadowsocks.ShadowsocksBean;
 import io.nekohasekai.sagernet.fmt.shadowsocksr.ShadowsocksRBean;
+import io.nekohasekai.sagernet.fmt.snell.SnellBean;
 import io.nekohasekai.sagernet.fmt.socks.SOCKSBean;
+import io.nekohasekai.sagernet.fmt.ssh.SSHBean;
 import io.nekohasekai.sagernet.fmt.trojan.TrojanBean;
 import io.nekohasekai.sagernet.fmt.trojan_go.TrojanGoBean;
 import io.nekohasekai.sagernet.fmt.v2ray.VLESSBean;
 import io.nekohasekai.sagernet.fmt.v2ray.VMessBean;
+import io.nekohasekai.sagernet.fmt.wireguard.WireGuardBean;
 import io.nekohasekai.sagernet.ktx.KryosKt;
+import io.nekohasekai.sagernet.ktx.Logs;
 
 public class KryoConverters {
 
@@ -67,27 +71,12 @@ public class KryoConverters {
     public static <T extends Serializable> T deserialize(T bean, byte[] bytes) {
         ByteArrayInputStream input = new ByteArrayInputStream(bytes);
         ByteBufferInput buffer = KryosKt.byteBuffer(input);
-        bean.deserializeFromBuffer(buffer);
-        IoUtil.close(buffer);
+        try {
+            bean.deserializeFromBuffer(buffer);
+        } catch (KryoException e) {
+            Logs.INSTANCE.w(e);
+        }
         bean.initializeDefaultValues();
-        return bean;
-    }
-
-    public static byte[] serializeWithoutName(AbstractBean bean) {
-        if (bean == null) return NULL;
-        ByteArrayOutputStream out = new ByteArrayOutputStream();
-        ByteBufferOutput buffer = KryosKt.byteBuffer(out);
-        bean.serialize(buffer);
-        IoUtil.flush(buffer);
-        IoUtil.close(buffer);
-        return out.toByteArray();
-    }
-
-    public static <T extends AbstractBean> T deserializeWithoutName(T bean, byte[] bytes) {
-        ByteArrayInputStream input = new ByteArrayInputStream(bytes);
-        ByteBufferInput buffer = KryosKt.byteBuffer(input);
-        bean.deserialize(buffer);
-        IoUtil.close(buffer);
         return bean;
     }
 
@@ -161,6 +150,30 @@ public class KryoConverters {
     public static BrookBean brookDeserialize(byte[] bytes) {
         if (ArrayUtil.isEmpty(bytes)) return null;
         return deserialize(new BrookBean(), bytes);
+    }
+
+    @TypeConverter
+    public static HysteriaBean hysteriaDeserialize(byte[] bytes) {
+        if (ArrayUtil.isEmpty(bytes)) return null;
+        return deserialize(new HysteriaBean(), bytes);
+    }
+
+    @TypeConverter
+    public static SnellBean snellDeserialize(byte[] bytes) {
+        if (ArrayUtil.isEmpty(bytes)) return null;
+        return deserialize(new SnellBean(), bytes);
+    }
+
+    @TypeConverter
+    public static SSHBean sshDeserialize(byte[] bytes) {
+        if (ArrayUtil.isEmpty(bytes)) return null;
+        return deserialize(new SSHBean(), bytes);
+    }
+
+    @TypeConverter
+    public static WireGuardBean wireguardDeserialize(byte[] bytes) {
+        if (ArrayUtil.isEmpty(bytes)) return null;
+        return deserialize(new WireGuardBean(), bytes);
     }
 
     @TypeConverter

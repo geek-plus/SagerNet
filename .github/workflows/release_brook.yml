@@ -39,12 +39,12 @@ jobs:
         with:
           path: |
             plugin/brook/src/main/jniLibs
-          key: ${{ hashFiles('bin/lib/brook/*', 'brook_status') }}
+          key: ${{ hashFiles('.github/workflows/*', 'bin/lib/brook/*', 'brook_status') }}
       - name: Gradle cache
         uses: actions/cache@v2
         with:
           path: ~/.gradle
-          key: gradle-${{ hashFiles('**/*.gradle') }}
+          key: gradle-${{ hashFiles('**/*.gradle.kts') }}
       - name: Install Golang
         uses: actions/setup-go@v2
         if: steps.cache.outputs.cache-hit != 'true'
@@ -69,15 +69,16 @@ jobs:
         with:
           path: |
             plugin/brook/src/main/jniLibs
-          key: ${{ hashFiles('bin/lib/brook/*', 'brook_status') }}
+          key: ${{ hashFiles('.github/workflows/*', 'bin/lib/brook/*', 'brook_status') }}
       - name: Gradle cache
         uses: actions/cache@v2
         with:
           path: ~/.gradle
-          key: gradle-${{ hashFiles('**/*.gradle') }}
+          key: gradle-${{ hashFiles('**/*.gradle.kts') }}
       - name: Release Build
         env:
           SKIP_BUILD: on
+          BUILD_PLUGIN: brook
         run: |
           echo "sdk.dir=${ANDROID_HOME}" > local.properties
           echo "ndk.dir=${ANDROID_HOME}/ndk/21.4.7075529" >> local.properties
@@ -161,7 +162,7 @@ jobs:
           upload apks/*
   play:
     name: Publish to Play Store
-    if: github.event.inputs.upload != 'y'
+    if: github.event.inputs.play != 'y'
     runs-on: ubuntu-latest
     needs:
       - native
@@ -176,13 +177,16 @@ jobs:
         with:
           path: |
             plugin/brook/src/main/jniLibs
-          key: ${{ hashFiles('bin/lib/brook/*', 'brook_status') }}
+          key: ${{ hashFiles('.github/workflows/*', 'bin/lib/brook/*', 'brook_status') }}
       - name: Gradle cache
         uses: actions/cache@v2
         with:
           path: ~/.gradle
-          key: gradle-${{ hashFiles('**/*.gradle') }}
+          key: gradle-${{ hashFiles('**/*.gradle.kts') }}
       - name: Release Build
+        env:
+          SKIP_BUILD: on
+          BUILD_PLUGIN: brook
         run: |
           echo "sdk.dir=${ANDROID_HOME}" > local.properties
           echo "ndk.dir=${ANDROID_HOME}/ndk/21.4.7075529" >> local.properties

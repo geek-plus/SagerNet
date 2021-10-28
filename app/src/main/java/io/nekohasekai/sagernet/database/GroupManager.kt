@@ -1,8 +1,6 @@
 /******************************************************************************
  *                                                                            *
- * Copyright (C) 2021 by nekohasekai <sekai@neko.services>                    *
- * Copyright (C) 2021 by Max Lv <max.c.lv@gmail.com>                          *
- * Copyright (C) 2021 by Mygod Studio <contact-shadowsocks-android@mygod.be>  *
+ * Copyright (C) 2021 by nekohasekai <contact-sagernet@sekai.icu>             *
  *                                                                            *
  * This program is free software: you can redistribute it and/or modify       *
  * it under the terms of the GNU General Public License as published by       *
@@ -21,6 +19,7 @@
 
 package io.nekohasekai.sagernet.database
 
+import io.nekohasekai.sagernet.GroupType
 import io.nekohasekai.sagernet.bg.SubscriptionUpdater
 import io.nekohasekai.sagernet.ktx.applyDefaultValues
 import io.nekohasekai.sagernet.utils.DirectBoot
@@ -49,8 +48,6 @@ object GroupManager {
         )
 
         suspend fun onUpdateFailure(group: ProxyGroup, message: String)
-        suspend fun onRequiringPlugin(group: ProxyGroup, issuer: String, plugin: String)
-        suspend fun onRequiringShadowsocksPlugin(group: ProxyGroup, plugin: String)
     }
 
     private val listeners = ArrayList<Listener>()
@@ -107,12 +104,18 @@ object GroupManager {
         group.userOrder = SagerDatabase.groupDao.nextOrder() ?: 1
         group.id = SagerDatabase.groupDao.createGroup(group.applyDefaultValues())
         iterator { groupAdd(group) }
+        if (group.type == GroupType.SUBSCRIPTION) {
+            SubscriptionUpdater.reconfigureUpdater()
+        }
         return group
     }
 
     suspend fun updateGroup(group: ProxyGroup) {
         SagerDatabase.groupDao.updateGroup(group)
         iterator { groupUpdated(group) }
+        if (group.type == GroupType.SUBSCRIPTION) {
+            SubscriptionUpdater.reconfigureUpdater()
+        }
     }
 
     suspend fun deleteGroup(groupId: Long) {

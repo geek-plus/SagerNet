@@ -1,8 +1,6 @@
 /******************************************************************************
  *                                                                            *
- * Copyright (C) 2021 by nekohasekai <sekai@neko.services>                    *
- * Copyright (C) 2021 by Max Lv <max.c.lv@gmail.com>                          *
- * Copyright (C) 2021 by Mygod Studio <contact-shadowsocks-android@mygod.be>  *
+ * Copyright (C) 2021 by nekohasekai <contact-sagernet@sekai.icu>             *
  *                                                                            *
  * This program is free software: you can redistribute it and/or modify       *
  * it under the terms of the GNU General Public License as published by       *
@@ -19,12 +17,13 @@
  *                                                                            *
  ******************************************************************************/
 
+@file:Suppress("SpellCheckingInspection")
+
 package io.nekohasekai.sagernet.ktx
 
 import android.os.Build
 import cn.hutool.core.lang.Validator
-import inet.ipaddr.IPAddress
-import inet.ipaddr.IPAddressString
+import io.nekohasekai.sagernet.BuildConfig
 import io.nekohasekai.sagernet.SagerNet
 import io.nekohasekai.sagernet.bg.VpnService
 import io.nekohasekai.sagernet.database.DataStore
@@ -98,9 +97,8 @@ fun AbstractBean.wrapUri(): String {
 }
 
 fun parseAddress(addressArray: ByteArray) = InetAddress.getByAddress(addressArray)
-val INET_TUN = IPAddressString(VpnService.PRIVATE_VLAN4_CLIENT).address.toInetAddress()
-val INET6_TUN = IPAddressString(VpnService.PRIVATE_VLAN6_CLIENT).address.toInetAddress()
-val INET_LO = IPAddressString(LOCALHOST).getAddress(IPAddress.IPVersion.IPV4).toInetAddress()
+val INET_TUN = InetAddress.getByName(VpnService.PRIVATE_VLAN4_CLIENT)
+val INET6_TUN = InetAddress.getByName(VpnService.PRIVATE_VLAN6_CLIENT)
 
 fun mkPort(): Int {
     val socket = Socket()
@@ -110,3 +108,12 @@ fun mkPort(): Int {
     socket.close()
     return port
 }
+
+const val IPPROTO_ICMP = 1
+const val IPPROTO_ICMPv6 = 58
+
+const val IPPROTO_TCP = 6
+const val IPPROTO_UDP = 17
+
+const val USER_AGENT = "curl/7.74.0"
+const val USER_AGENT_ORIGIN = "SagerNet/${BuildConfig.VERSION_NAME}"

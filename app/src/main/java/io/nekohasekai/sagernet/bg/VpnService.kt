@@ -1,6 +1,6 @@
 /******************************************************************************
  *                                                                            *
- * Copyright (C) 2021 by nekohasekai <sekai@neko.services>                    *
+ * Copyright (C) 2021 by nekohasekai <contact-sagernet@sekai.icu>             *
  * Copyright (C) 2021 by Max Lv <max.c.lv@gmail.com>                          *
  * Copyright (C) 2021 by Mygod Studio <contact-shadowsocks-android@mygod.be>  *
  *                                                                            *
@@ -25,8 +25,6 @@ import android.Manifest
 import android.app.Service
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.net.LocalSocket
-import android.net.LocalSocketAddress
 import android.net.Network
 import android.net.ProxyInfo
 import android.os.Build
@@ -36,22 +34,27 @@ import android.system.Os
 import androidx.annotation.RequiresApi
 import io.nekohasekai.sagernet.*
 import io.nekohasekai.sagernet.database.DataStore
+import io.nekohasekai.sagernet.database.SagerDatabase
+import io.nekohasekai.sagernet.database.StatsEntity
 import io.nekohasekai.sagernet.fmt.LOCALHOST
 import io.nekohasekai.sagernet.ktx.Logs
-import io.nekohasekai.sagernet.tun.TunThread
 import io.nekohasekai.sagernet.ui.VpnRequestActivity
 import io.nekohasekai.sagernet.utils.DefaultNetworkListener
+import io.nekohasekai.sagernet.utils.PackageCache
 import io.nekohasekai.sagernet.utils.Subnet
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
-import java.io.File
+import libcore.AppStats
+import libcore.Libcore
+import libcore.TrafficListener
+import libcore.Tun2ray
 import java.io.FileDescriptor
-import java.io.IOException
 import android.net.VpnService as BaseVpnService
 
 class VpnService : BaseVpnService(),
-    BaseService.Interface {
+    BaseService.Interface,
+    TrafficListener {
 
     companion object {
         var instance: VpnService? = null
@@ -75,7 +78,11 @@ class VpnService : BaseVpnService(),
     }
 
     lateinit var conn: ParcelFileDescriptor
-    lateinit var tun: TunThread
+    private lateinit var tun: Tun2ray
+    fun getTun(): Tun2ray? {
+        if (!::tun.isInitialized) return null
+        return tun
+    }
 
     private var active = false
     private var metered = false
@@ -99,14 +106,15 @@ class VpnService : BaseVpnService(),
         startVpn()
     }
 
-    override fun killProcesses(scope: CoroutineScope) {
-        super.killProcesses(scope)
-        active = false
-        scope.launch { DefaultNetworkListener.stop(this) }
+    @Suppress("EXPERIMENTAL_API_USAGE")
+    override fun killProcesses() {
+        getTun()?.close()
         if (::conn.isInitialized) conn.close()
-        if (::tun.isInitialized) tun.interrupt()
+        super.killProcesses()
+        persistAppStats()
+        active = false
+        GlobalScope.launch(Dispatchers.Default) { DefaultNetworkListener.stop(this) }
     }
-
 
     override fun onBind(intent: Intent) = when (intent.action) {
         SERVICE_INTERFACE -> super<BaseVpnService>.onBind(intent)
@@ -139,16 +147,15 @@ class VpnService : BaseVpnService(),
         override fun getLocalizedMessage() = getString(R.string.reboot_required)
     }
 
-    private suspend fun startVpn() {
+    private fun startVpn() {
         instance = this
 
         val profile = data.proxy!!.profile
         val builder = Builder().setConfigureIntent(SagerNet.configureIntent(this))
-                .setSession(profile.displayName())
-                .setMtu(VPN_MTU)
+            .setSession(profile.displayName())
+            .setMtu(VPN_MTU)
         val useFakeDns = DataStore.enableFakeDns
         val ipv6Mode = DataStore.ipv6Mode
-        val useNativeForwarding = DataStore.vpnMode == VpnMode.EXPERIMENTAL_FORWARDING
 
         builder.addAddress(PRIVATE_VLAN4_CLIENT, 30)
         if (useFakeDns) {
@@ -166,7 +173,7 @@ class VpnService : BaseVpnService(),
         if (DataStore.bypassLan && !DataStore.bypassLanInCoreOnly) {
             resources.getStringArray(R.array.bypass_private_route).forEach {
                 val subnet = Subnet.fromString(it)!!
-                builder.addRoute(subnet.address.hostAddress, subnet.prefixSize)
+                builder.addRoute(subnet.address.hostAddress!!, subnet.prefixSize)
             }
             builder.addRoute(PRIVATE_VLAN4_ROUTER, 32)
             // https://issuetracker.google.com/issues/149636790
@@ -187,10 +194,8 @@ class VpnService : BaseVpnService(),
 
         val packageName = packageName
         val proxyApps = DataStore.proxyApps
-        val needBypassRootUid =
-            useNativeForwarding || data.proxy!!.config.outboundTagsAll.values.any { it.ptBean != null }
-        val needIncludeSelf =
-            useNativeForwarding || data.proxy!!.config.index.any { !it.isBalancer && it.chain.size > 1 }
+        val needBypassRootUid = data.proxy!!.config.outboundTagsAll.values.any { it.ptBean != null }
+        val needIncludeSelf = data.proxy!!.config.index.any { !it.isBalancer && it.chain.size > 1 }
         if (proxyApps || needBypassRootUid) {
             var bypass = DataStore.bypass
             val individual = mutableSetOf<String>()
@@ -247,63 +252,66 @@ class VpnService : BaseVpnService(),
         metered = DataStore.meteredNetwork
         active = true   // possible race condition here?
         if (Build.VERSION.SDK_INT >= 29) builder.setMetered(metered)
-
-        if (useNativeForwarding) builder.setBlocking(useNativeForwarding)
         conn = builder.establish() ?: throw NullConnectionException()
 
-        if (!useNativeForwarding) {
-            val cmd = arrayListOf(
-                File(applicationInfo.nativeLibraryDir, Executable.TUN2SOCKS).canonicalPath,
-                "--netif-ipaddr",
-                PRIVATE_VLAN4_ROUTER,
-                "--socks-server-addr",
-                "$LOCALHOST:${DataStore.socksPort}",
-                "--tunmtu",
-                VPN_MTU.toString(),
-                "--sock-path",
-                File(SagerNet.deviceStorage.noBackupFilesDir, "sock_path").canonicalPath,
-                "--loglevel",
-                "warning"
-            )
-            cmd += "--dnsgw"
-            cmd += "$LOCALHOST:${DataStore.localDNSPort}"
-            if (ipv6Mode != IPv6Mode.DISABLE) {
-                cmd += "--netif-ip6addr"
-                cmd += PRIVATE_VLAN6_ROUTER
-            }
-            cmd += "--enable-udprelay"
-            data.proxy!!.processes.start(cmd, onRestartCallback = {
-                try {
-                    sendFd(conn.fileDescriptor)
-                } catch (e: ErrnoException) {
-                    stopRunner(false, e.message)
-                }
-            })
-            sendFd(conn.fileDescriptor)
-        } else {
-            tun = TunThread(this)
-            tun.start()
-        }
+        tun = Libcore.newTun2ray(
+            conn.fd,
+            VPN_MTU,
+            data.proxy!!.v2rayPoint,
+            PRIVATE_VLAN4_ROUTER,
+            DataStore.tunImplementation == TunImplementation.GVISOR,
+            true,
+            DataStore.trafficSniffing,
+            DataStore.destinationOverride,
+            DataStore.enableFakeDns,
+            DataStore.enableLog,
+            data.proxy!!.config.dumpUid,
+            DataStore.appTrafficStatistics,
+            DataStore.enablePcap
+        )
     }
 
-    private suspend fun sendFd(fd: FileDescriptor) {
-        var tries = 0
-        val path = File(SagerNet.deviceStorage.noBackupFilesDir, "sock_path").canonicalPath
-        while (true) try {
-            delay(50L shl tries)
-            LocalSocket().use { localSocket ->
-                localSocket.connect(
-                    LocalSocketAddress(
-                        path, LocalSocketAddress.Namespace.FILESYSTEM
+    val appStats = mutableListOf<AppStats>()
+
+    override fun updateStats(stats: AppStats) {
+        appStats.add(stats)
+    }
+
+    fun persistAppStats() {
+        if (!DataStore.appTrafficStatistics) return
+        val tun = getTun() ?: return
+        appStats.clear()
+        tun.readAppTraffics(this)
+        val toUpdate = mutableListOf<StatsEntity>()
+        val all = SagerDatabase.statsDao.all().associateBy { it.packageName }
+        for (stats in appStats) {
+            val packageName = if (stats.uid >= 10000) {
+                PackageCache.uidMap[stats.uid]?.iterator()?.next() ?: "android"
+            } else {
+                "android"
+            }
+            if (!all.containsKey(packageName)) {
+                SagerDatabase.statsDao.create(
+                    StatsEntity(
+                        packageName = packageName,
+                        tcpConnections = stats.tcpConnTotal,
+                        udpConnections = stats.udpConnTotal,
+                        uplink = stats.uplinkTotal,
+                        downlink = stats.downlinkTotal
                     )
                 )
-                localSocket.setFileDescriptorsForSend(arrayOf(fd))
-                localSocket.outputStream.write(42)
+            } else {
+                val entity = all[packageName]!!
+                entity.tcpConnections += stats.tcpConnTotal
+                entity.udpConnections += stats.udpConnTotal
+                entity.uplink += stats.uplinkTotal
+                entity.downlink += stats.downlinkTotal
+                toUpdate.add(entity)
             }
-            return
-        } catch (e: IOException) {
-            if (tries > 5) throw e
-            tries += 1
+            if (toUpdate.isNotEmpty()) {
+                SagerDatabase.statsDao.update(toUpdate)
+            }
+
         }
     }
 
@@ -313,5 +321,6 @@ class VpnService : BaseVpnService(),
         super.onDestroy()
         data.binder.close()
     }
+
 
 }

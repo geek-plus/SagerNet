@@ -1,8 +1,6 @@
 /******************************************************************************
  *                                                                            *
- * Copyright (C) 2021 by nekohasekai <sekai@neko.services>                    *
- * Copyright (C) 2021 by Max Lv <max.c.lv@gmail.com>                          *
- * Copyright (C) 2021 by Mygod Studio <contact-shadowsocks-android@mygod.be>  *
+ * Copyright (C) 2021 by nekohasekai <contact-sagernet@sekai.icu>             *
  *                                                                            *
  * This program is free software: you can redistribute it and/or modify       *
  * it under the terms of the GNU General Public License as published by       *
@@ -24,7 +22,10 @@ package io.nekohasekai.sagernet.bg
 import android.content.Context
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
-import androidx.work.*
+import androidx.work.CoroutineWorker
+import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.PeriodicWorkRequest
+import androidx.work.WorkerParameters
 import androidx.work.multiprocess.RemoteWorkManager
 import io.nekohasekai.sagernet.R
 import io.nekohasekai.sagernet.database.DataStore
@@ -37,27 +38,27 @@ object SubscriptionUpdater {
 
     private const val WORK_NAME = "SubscriptionUpdater"
 
-    private val DEFAULT_CONSTRAINTS = Constraints.Builder().setRequiresBatteryNotLow(true).build()
-
     suspend fun reconfigureUpdater() {
         RemoteWorkManager.getInstance(app).cancelUniqueWork(WORK_NAME)
 
-        val subscriptions =
-            SagerDatabase.groupDao.subscriptions().filter { it.subscription!!.autoUpdate }
+        val subscriptions = SagerDatabase.groupDao.subscriptions()
+            .filter { it.subscription!!.autoUpdate }
         if (subscriptions.isEmpty()) return
 
         // PeriodicWorkRequest.MIN_PERIODIC_INTERVAL_MILLIS
-        var minDelay =
-            subscriptions.minByOrNull { it.subscription!!.autoUpdateDelay }!!.subscription!!.autoUpdateDelay.toLong()
+        var minDelay = subscriptions.minByOrNull { it.subscription!!.autoUpdateDelay }!!.subscription!!.autoUpdateDelay.toLong()
+        val now = System.currentTimeMillis() / 1000L
+        val minInitDelay = subscriptions.minOf { now - it.subscription!!.lastUpdated - (minDelay * 60) }
         if (minDelay < 15) minDelay = 15
 
         RemoteWorkManager.getInstance(app).enqueueUniquePeriodicWork(
-                WORK_NAME,
-                ExistingPeriodicWorkPolicy.REPLACE,
-                PeriodicWorkRequest.Builder(UpdateTask::class.java, minDelay, TimeUnit.MINUTES)
-                    .setInitialDelay(minDelay, TimeUnit.MINUTES)
-                    .setConstraints(DEFAULT_CONSTRAINTS)
-                    .build()
+            WORK_NAME,
+            ExistingPeriodicWorkPolicy.REPLACE,
+            PeriodicWorkRequest.Builder(UpdateTask::class.java, minDelay, TimeUnit.MINUTES)
+                .apply {
+                    if (minInitDelay > 0) setInitialDelay(minInitDelay, TimeUnit.SECONDS)
+                }
+                .build()
         )
     }
 
@@ -75,8 +76,8 @@ object SubscriptionUpdater {
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
 
         override suspend fun doWork(): Result {
-            var subscriptions =
-                SagerDatabase.groupDao.subscriptions().filter { it.subscription!!.autoUpdate }
+            var subscriptions = SagerDatabase.groupDao.subscriptions()
+                .filter { it.subscription!!.autoUpdate }
             if (DataStore.startedProfile == 0L) {
                 subscriptions = subscriptions.filter { !it.subscription!!.updateWhenConnectedOnly }
             }
@@ -84,15 +85,14 @@ object SubscriptionUpdater {
             if (subscriptions.isNotEmpty()) for (profile in subscriptions) {
                 val subscription = profile.subscription!!
 
-                val delay = subscription.autoUpdateDelay
                 if (((System.currentTimeMillis() / 1000).toInt() - subscription.lastUpdated) < subscription.autoUpdateDelay * 60) {
                     continue
                 }
 
                 notification.setContentText(
-                        applicationContext.getString(
-                                R.string.subscription_update_message, profile.displayName()
-                        )
+                    applicationContext.getString(
+                        R.string.subscription_update_message, profile.displayName()
+                    )
                 )
                 nm.notify(2, notification.build())
 
